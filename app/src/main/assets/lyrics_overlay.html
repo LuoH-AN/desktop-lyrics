@@ -105,6 +105,7 @@
       gap:5px; opacity:0; transform:scale(.985); pointer-events:none;
       transition:opacity .32s ease,transform .32s cubic-bezier(.22,.8,.25,1);
     }
+    .media-column,.lyrics-column { display:contents; }
     body.has-session #waiting { display:none; }
     body.has-session #player { opacity:1; transform:none; pointer-events:auto; }
     .metadata { display:grid; grid-template-columns:58px minmax(0,1fr); gap:10px; min-width:0; align-items:center; }
@@ -122,7 +123,7 @@
     body.playing .playing-ring { opacity:1; transform:scale(1); animation:ring 2s ease-in-out infinite; }
     @keyframes ring { 50% { border-color:rgba(255,255,255,.12); } }
     .meta-copy { min-width:0; }
-    .eyebrow { display:flex; min-width:0; align-items:center; gap:7px; margin-bottom:4px; padding-right:52px; overflow:hidden; color:rgba(255,255,255,.68); font-size:9px; font-weight:720; letter-spacing:.1em; text-transform:uppercase; }
+    .eyebrow { display:flex; min-width:0; align-items:center; gap:7px; margin-bottom:4px; padding-right:76px; overflow:hidden; color:rgba(255,255,255,.68); font-size:9px; font-weight:720; letter-spacing:.1em; text-transform:uppercase; }
     .dot { flex:0 0 auto; width:6px; height:6px; border-radius:99px; background:#a5a8b0; box-shadow:0 0 0 0 rgba(120,255,172,.35); }
     body.playing .dot { background:#72f6a4; animation:pulse 1.7s ease-out infinite; }
     @keyframes pulse { 60% { box-shadow:0 0 0 7px rgba(114,246,164,0); } }
@@ -227,11 +228,46 @@
     body.compact .metadata,body.compact .chips,body.compact .footer { display:none; }
     body.compact .lyrics-viewport { display:none; }
     body.compact .compact-lyric { display:block; }
+    body.horizontal-layout:not(.compact) #player {
+      grid-template-columns:minmax(78px,2.5fr) minmax(0,7.5fr);
+      grid-template-rows:minmax(0,1fr);
+      gap:8px;
+    }
+    body.horizontal-layout:not(.compact) .lyrics-column {
+      grid-column:2;
+      grid-row:1;
+      display:grid;
+      grid-template-rows:minmax(0,1fr);
+      min-width:0;
+      min-height:0;
+    }
+    body.horizontal-layout:not(.compact) .media-column {
+      grid-column:1;
+      grid-row:1;
+      display:grid;
+      grid-template-rows:minmax(0,1fr) 20px 15px;
+      gap:5px;
+      min-width:0;
+      min-height:0;
+    }
+    body.horizontal-layout:not(.compact) .metadata {
+      grid-template-columns:minmax(0,1fr);
+      grid-template-rows:76px auto;
+      align-content:center;
+      justify-items:center;
+      gap:7px;
+    }
+    body.horizontal-layout:not(.compact) .cover-wrap { width:68px; height:68px; border-radius:15px; }
+    body.horizontal-layout:not(.compact) .meta-copy { width:100%; text-align:center; }
+    body.horizontal-layout:not(.compact) .eyebrow { justify-content:center; padding-right:0; }
+    body.horizontal-layout:not(.compact) .chips { justify-content:center; }
+    body.horizontal-layout:not(.compact) #device-chip { max-width:62%; }
+    body.horizontal-layout:not(.compact) .footer { column-gap:4px; }
     @media (max-width:170px) {
       body:not(.compact) #player { padding-left:7px; padding-right:7px; }
       body:not(.compact) .metadata { grid-template-columns:minmax(0,1fr); }
       body:not(.compact) .cover-wrap { display:none; }
-      body:not(.compact) .eyebrow { padding-right:48px; }
+      body:not(.compact) .eyebrow { padding-right:76px; }
     }
   </style>
 </head>
@@ -253,30 +289,34 @@
         <div class="waiting-copy" id="waiting-copy">打开 Apple Music 或其他音乐软件后，歌词会自动出现。</div>
       </div>
       <div id="player">
-        <header class="metadata">
-          <div class="cover-wrap">
-            <img id="cover" alt="专辑封面" referrerpolicy="no-referrer">
-            <div class="playing-ring"></div>
+        <div class="media-column">
+          <header class="metadata">
+            <div class="cover-wrap">
+              <img id="cover" alt="专辑封面" referrerpolicy="no-referrer">
+              <div class="playing-ring"></div>
+            </div>
+            <div class="meta-copy">
+              <div class="eyebrow"><span class="dot"></span><span class="loop-marquee" id="state-viewport"><span class="loop-marquee-text" id="state-label">本地媒体会话</span></span></div>
+              <div class="loop-marquee" id="track"><span class="loop-marquee-text" id="track-text">未知歌曲</span></div>
+              <div id="artist">未知歌手</div>
+            </div>
+          </header>
+          <div class="chips">
+            <span class="chip" id="device-chip">音频设备</span>
+            <span class="chip" id="volume-chip">音量 --%</span>
           </div>
-          <div class="meta-copy">
-            <div class="eyebrow"><span class="dot"></span><span class="loop-marquee" id="state-viewport"><span class="loop-marquee-text" id="state-label">本地媒体会话</span></span></div>
-            <div class="loop-marquee" id="track"><span class="loop-marquee-text" id="track-text">未知歌曲</span></div>
-            <div id="artist">未知歌手</div>
+          <footer class="footer">
+            <span class="progress-time current" id="current-time">0:00</span>
+            <div class="progress-shell"><div id="progress"></div></div>
+            <span class="progress-time total" id="duration-time">0:00</span>
+          </footer>
+        </div>
+        <div class="lyrics-column">
+          <div class="lyrics-viewport" id="lyrics-viewport">
+            <div id="lyrics"><div class="line loading">正在匹配歌词…</div></div>
           </div>
-        </header>
-        <div class="chips">
-          <span class="chip" id="device-chip">音频设备</span>
-          <span class="chip" id="volume-chip">音量 --%</span>
+          <div class="compact-lyric" id="compact-lyric"></div>
         </div>
-        <footer class="footer">
-          <span class="progress-time current" id="current-time">0:00</span>
-          <div class="progress-shell"><div id="progress"></div></div>
-          <span class="progress-time total" id="duration-time">0:00</span>
-        </footer>
-        <div class="lyrics-viewport" id="lyrics-viewport">
-          <div id="lyrics"><div class="line loading">正在匹配歌词…</div></div>
-        </div>
-        <div class="compact-lyric" id="compact-lyric"></div>
       </div>
     </section>
   </div>
@@ -975,7 +1015,7 @@
     }
 
     function setFontScale(percent) {
-      const normalized=Math.max(75,Math.min(150,Number(percent)||100));
+      const normalized=Math.max(35,Math.min(150,Number(percent)||100));
       lyricFontScale=normalized/100;
       const root=document.documentElement.style;
       root.setProperty('--lyric-font-size',(28*lyricFontScale).toFixed(2)+'px');
@@ -996,6 +1036,10 @@
       receiveLyrics,
       receiveRemoteCover,
       setFontScale,
+      setHorizontalLayout(value) {
+        document.body.classList.toggle('horizontal-layout', !!value);
+        recenterAfterLayout();
+      },
       setCompact(value) {
         const nextCompact = !!value;
         if(nextCompact)resumeRealtimeLyrics(false);

@@ -128,68 +128,87 @@ class DirectLyricsRepository {
     }
 
     private fun queryQqMusic(track: String, artist: String, includeLyrics: Boolean): Result? {
-        val query = "$track $artist".trim()
-        val searchUrl = "https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp" +
-            "?format=json&p=1&n=8&w=${encode(query)}"
         val headers = mapOf(
             "Accept" to "application/json",
             "Referer" to "https://y.qq.com/",
             "User-Agent" to USER_AGENT
         )
-        val root = JSONObject(getText(searchUrl, headers))
-        val songs = root.optJSONObject("data")
-            ?.optJSONObject("song")
-            ?.optJSONArray("list") ?: return null
-        val song = bestJsonMatch(songs, track, artist) { item ->
-            val singers = item.optJSONArray("singer").joinNames("name")
-            Triple(item.optString("songname").ifBlank { item.optString("songorig") }, singers, item)
-        } ?: return null
+        for (searchTrack in searchTrackVariants(track)) {
+            val query = "$searchTrack $artist".trim()
+            val searchUrl = "https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp" +
+                "?format=json&p=1&n=8&w=${encode(query)}"
+            val root = JSONObject(getText(searchUrl, headers))
+            val songs = root.optJSONObject("data")
+                ?.optJSONObject("song")
+                ?.optJSONArray("list") ?: continue
+            val song = firstJsonMatch(
+                songs,
+                track,
+                artist,
+                isUsable = { item ->
+                    !includeLyrics || item.optString("songmid").let { it.isNotBlank() && it != "0" }
+                }
+            ) { item ->
+                val singers = item.optJSONArray("singer").joinNames("name")
+                Triple(item.optString("songname").ifBlank { item.optString("songorig") }, singers, item)
+            } ?: continue
 
-        val title = song.optString("songname").ifBlank { song.optString("songorig") }
-        val singer = song.optJSONArray("singer").joinNames("name")
-        val score = matchScore(track, artist, title, singer)
-        val albumMid = song.optString("albummid")
-        val albumId = song.optLong("albumid", 0L)
-        val cover = when {
-            albumMid.isNotBlank() && !albumMid.all(Char::isDigit) ->
-                "https://y.gtimg.cn/music/photo_new/T002R800x800M000$albumMid.jpg"
-            albumId > 0L ->
-                "https://y.gtimg.cn/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg"
-            else -> ""
+            val title = song.optString("songname").ifBlank { song.optString("songorig") }
+            val singer = song.optJSONArray("singer").joinNames("name")
+            val score = matchScore(track, artist, title, singer)
+            val albumMid = song.optString("albummid")
+            val albumId = song.optLong("albumid", 0L)
+            val cover = when {
+                albumMid.isNotBlank() && !albumMid.all(Char::isDigit) ->
+                    "https://y.gtimg.cn/music/photo_new/T002R800x800M000$albumMid.jpg"
+                albumId > 0L ->
+                    "https://y.gtimg.cn/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg"
+                else -> ""
+            }
+            if (!includeLyrics) return Result(cover = cover, source = "QQ音乐", score = score)
+
+            val songMid = song.optString("songmid")
+            val lyricUrl = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg" +
+                "?songmid=${encode(songMid)}&format=json&nobase64=1"
+            val lyricRoot = parseJsonFlexible(getBytes(lyricUrl, headers)) ?: continue
+            val lyrics = unescapeHtml(lyricRoot.optString("lyric"))
+            if (lyrics.isBlank()) continue
+            return Result(
+                lyrics = lyrics,
+                durationMs = song.optLong("interval", 0L) * 1000L,
+                cover = cover,
+                source = "QQ音乐",
+                score = score + 5
+            )
         }
-        if (!includeLyrics) return Result(cover = cover, source = "QQ音乐", score = score)
-
-        val songMid = song.optString("songmid")
-        if (songMid.isBlank()) return null
-        val lyricUrl = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg" +
-            "?songmid=${encode(songMid)}&format=json&nobase64=1"
-        val lyricRoot = parseJsonFlexible(getBytes(lyricUrl, headers)) ?: return null
-        val lyrics = unescapeHtml(lyricRoot.optString("lyric"))
-        if (lyrics.isBlank()) return null
-        return Result(
-            lyrics = lyrics,
-            durationMs = song.optLong("interval", 0L) * 1000L,
-            cover = cover,
-            source = "QQ音乐",
-            score = score + 5
-        )
+        return null
     }
 
     private fun queryNetEase(track: String, artist: String, includeLyrics: Boolean): Result? {
-        val query = "$track $artist".trim()
-        val searchUrl = "https://music.163.com/api/search/get/web" +
-            "?type=1&limit=8&s=${encode(query)}"
         val headers = mapOf(
             "Accept" to "application/json",
             "Referer" to "https://music.163.com/",
             "User-Agent" to USER_AGENT
         )
-        val root = JSONObject(getText(searchUrl, headers))
-        val songs = root.optJSONObject("result")?.optJSONArray("songs") ?: return null
-        val song = bestJsonMatch(songs, track, artist) { item ->
-            val artists = (item.optJSONArray("artists") ?: item.optJSONArray("ar")).joinNames("name")
-            Triple(item.optString("name"), artists, item)
-        } ?: return null
+        var song: JSONObject? = null
+        for (searchTrack in searchTrackVariants(track)) {
+            val query = "$searchTrack $artist".trim()
+            val searchUrl = "https://music.163.com/api/search/get/web" +
+                "?type=1&limit=8&s=${encode(query)}"
+            val root = JSONObject(getText(searchUrl, headers))
+            val songs = root.optJSONObject("result")?.optJSONArray("songs") ?: continue
+            song = firstJsonMatch(
+                songs,
+                track,
+                artist,
+                isUsable = { item -> item.optLong("id", 0L) > 0L }
+            ) { item ->
+                val artists = (item.optJSONArray("artists") ?: item.optJSONArray("ar")).joinNames("name")
+                Triple(item.optString("name"), artists, item)
+            }
+            if (song != null) break
+        }
+        song ?: return null
 
         val title = song.optString("name")
         val singer = (song.optJSONArray("artists") ?: song.optJSONArray("ar")).joinNames("name")
@@ -221,24 +240,31 @@ class DirectLyricsRepository {
         )
     }
 
-    private fun bestJsonMatch(
+    private fun firstJsonMatch(
         array: JSONArray,
         track: String,
         artist: String,
+        isUsable: (JSONObject) -> Boolean = { true },
         fields: (JSONObject) -> Triple<String, String, JSONObject>
     ): JSONObject? {
-        var best: JSONObject? = null
-        var bestScore = Int.MIN_VALUE
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue
+            if (!isUsable(item)) continue
             val (title, singer, value) = fields(item)
             val score = matchScore(track, artist, title, singer)
-            if (score > bestScore) {
-                best = value
-                bestScore = score
-            }
+            if (score >= MIN_ACCEPTABLE_SCORE) return value
         }
-        return best?.takeIf { bestScore >= MIN_ACCEPTABLE_SCORE }
+        return null
+    }
+
+    private fun searchTrackVariants(track: String): List<String> {
+        val simplified = track
+            .replace(Regex("\\s*[（(][^）)]*[）)]\\s*"), " ")
+            .replace(Regex("\\s*[【\\[].*?[】\\]]\\s*"), " ")
+            .trim()
+        return listOf(track.trim(), simplified)
+            .filter { it.isNotBlank() }
+            .distinct()
     }
 
     private fun matchScore(track: String, artist: String, candidateTrack: String, candidateArtist: String): Int {
@@ -247,6 +273,12 @@ class DirectLyricsRepository {
         val wantedArtist = normalize(artist)
         val foundArtist = normalize(candidateArtist)
         if (wantedTrack.isBlank() || foundTrack.isBlank()) return 0
+        if (
+            wantedArtist.isNotBlank() &&
+            foundArtist.isNotBlank() &&
+            wantedArtist !in foundArtist &&
+            foundArtist !in wantedArtist
+        ) return 0
 
         val titleScore = when {
             wantedTrack == foundTrack -> 80
@@ -332,10 +364,10 @@ class DirectLyricsRepository {
     private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
 
     companion object {
-        private const val CONNECT_TIMEOUT_MS = 1_500
-        private const val READ_TIMEOUT_MS = 2_200
-        private const val LYRICS_DEADLINE_MS = 3_800L
-        private const val COVER_DEADLINE_MS = 3_000L
+        private const val CONNECT_TIMEOUT_MS = 3_000
+        private const val READ_TIMEOUT_MS = 6_000
+        private const val LYRICS_DEADLINE_MS = 10_000L
+        private const val COVER_DEADLINE_MS = 6_000L
         private const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
         private const val MIN_ACCEPTABLE_SCORE = 50
         private const val EXACT_MATCH_SCORE = 95

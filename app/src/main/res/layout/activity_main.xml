@@ -177,7 +177,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="3dp"
                         android:lineSpacingExtra="1dp"
-                        android:text="单点切换标准 / 收起，长按拖动自定义尺寸；展开时可滑动歌词，稍后自动恢复实时跟随"
+                        android:text="单点切换标准 / 收起，长按拖动自定义尺寸；展开态可将整个悬浮窗旋转 90°"
                         android:textColor="#989FAF"
                         android:textSize="11sp" />
                 </LinearLayout>
@@ -189,7 +189,7 @@
                 android:layout_marginTop="10dp"
                 android:gravity="center"
                 android:lineSpacingExtra="1dp"
-                android:text="本地实时读取当前歌曲 · 直连多源歌词 · 悬浮同步显示"
+                android:text="本地实时读取 · 直连多源歌词 · 开启期间保持屏幕常亮"
                 android:textColor="#747C8E"
                 android:textSize="10sp" />
         </LinearLayout>
@@ -249,8 +249,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="34dp"
                 android:layout_marginTop="3dp"
-                android:max="75"
-                android:progress="25"
+                android:max="115"
+                android:progress="65"
                 android:progressBackgroundTint="#39404F"
                 android:progressTint="#9BAEFF"
                 android:splitTrack="false"

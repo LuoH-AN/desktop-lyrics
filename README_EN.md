@@ -28,14 +28,17 @@ Watch on Bilibili: [Desktop Lyrics for Android — Apple Music / Spotify real-ti
 ## Highlights
 
 - Local, real-time track title, artist, album, playback state, progress, and artwork
-- Synchronized lyrics and fallback artwork from LRCLIB, QQ Music, and NetEase Cloud Music
+- Synchronized lyrics and fallback artwork selected by track and artist across LRCLIB, QQ Music, and NetEase Cloud Music
 - Full and compact overlay modes with continuous free resizing and dragging
+- Rotate all full-overlay content by 90° inside a fixed outer frame without rotating the system UI; the horizontal view uses a 25% media / 75% lyrics split
 - Time-aware, one-direction lyric scrolling in compact mode
 - Manual lyric browsing with inertial scrolling and automatic live-follow recovery
-- Adjustable lyric font size from 75% to 150%, with a responsive minimum height
+- Adjustable lyric font size from 35% to 150%, with a responsive minimum height
 - Transparent, low-load, and high-load animated album-color backgrounds
 - Media volume and the current Bluetooth, wired, or USB audio output device
 - A minimum width of roughly one third of the screen, with seamless marquee titles
+- Keeps the screen awake while the overlay is visible and releases that behavior when closed
+- Skips unusable or wrong-artist matches, retries without soundtrack qualifiers when needed, and allows up to 10 seconds on slow networks
 
 ## Requirements and compatibility
 
@@ -55,6 +58,7 @@ Long-running behavior may vary with vendor-specific battery restrictions. If the
 4. Optionally grant Nearby devices permission to show the connected Bluetooth device name.
 5. Start the floating lyrics overlay and play music.
 6. Tap the resize icon to switch modes, or long-press and drag it for continuous resizing.
+7. In full mode, tap the rotation icon to turn the overlay content by 90° while keeping the outer footprint unchanged.
 
 ## Permissions and privacy
 
@@ -84,7 +88,7 @@ To build a signed APK, copy `keystore.properties.example` to `keystore.propertie
 
 ## Project information
 
-- Current release: `1.00` (versionCode 100)
+- Current release: `1.01` (versionCode 101)
 - Android package: `com.tcrrry.desktoplyrics`
 - Author: Bilibili `@Tcrrrry`
 

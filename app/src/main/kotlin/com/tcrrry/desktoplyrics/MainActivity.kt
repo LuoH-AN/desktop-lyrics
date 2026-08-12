@@ -66,6 +66,8 @@ class MainActivity : AppCompatActivity() {
         backgroundModeHigh = findViewById(R.id.background_mode_high)
         seekFontSize = findViewById(R.id.seek_font_size)
         fontSizeValue = findViewById(R.id.font_size_value)
+        seekFontSize.max = LyricsOverlayService.FONT_SCALE_MAX_PERCENT -
+            LyricsOverlayService.FONT_SCALE_MIN_PERCENT
 
         btnListenerPermission.setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
