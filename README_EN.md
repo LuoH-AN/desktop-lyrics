@@ -29,13 +29,16 @@ Watch on Bilibili: [Desktop Lyrics for Android — Apple Music / Spotify real-ti
 
 - Local, real-time track title, artist, album, playback state, progress, and artwork
 - Synchronized lyrics and fallback artwork selected by track and artist across LRCLIB, QQ Music, and NetEase Cloud Music
+- NetEase word-timed lyrics and official translations, with original, bilingual, or translated display modes and manual source switching
+- In-overlay previous, play/pause, and next controls, plus a seekable progress bar
 - Full and compact overlay modes with continuous free resizing and dragging
 - Rotate all full-overlay content by 90° inside a fixed outer frame without rotating the system UI; the horizontal view uses a 25% media / 75% lyrics split
 - Time-aware, one-direction lyric scrolling in compact mode
-- Manual lyric browsing with inertial scrolling and automatic live-follow recovery
+- Manual lyric browsing with inertial scrolling; tap a timed lyric line to seek, with automatic live-follow recovery
 - Adjustable lyric font size from 35% to 150%, with a responsive minimum height
+- Color presets, a full RGB color picker, and a ±5-second lyric timing offset
 - Transparent, low-load, and high-load animated album-color backgrounds
-- Media volume and the current Bluetooth, wired, or USB audio output device
+- Media volume plus responsive playback controls and marquee information pills for narrow overlays
 - A minimum width of roughly one third of the screen, with seamless marquee titles
 - Keeps the screen awake while the overlay is visible and releases that behavior when closed
 - Skips unusable or wrong-artist matches, retries without soundtrack qualifiers when needed, and allows up to 10 seconds on slow networks
@@ -55,10 +58,10 @@ Long-running behavior may vary with vendor-specific battery restrictions. If the
 1. Download the latest APK from [Releases](https://github.com/tcrrry/desktop-lyrics/releases/latest).
 2. Install and open Desktop Lyrics.
 3. Grant Notification Access and the Display over other apps permission.
-4. Optionally grant Nearby devices permission to show the connected Bluetooth device name.
-5. Start the floating lyrics overlay and play music.
-6. Tap the resize icon to switch modes, or long-press and drag it for continuous resizing.
-7. In full mode, tap the rotation icon to turn the overlay content by 90° while keeping the outer footprint unchanged.
+4. Start the floating lyrics overlay and play music.
+5. Tap the resize icon to switch modes, or long-press and drag it for continuous resizing.
+6. In full mode, tap the rotation icon to turn the overlay content by 90° while keeping the outer footprint unchanged.
+7. Use the playback buttons or drag the progress bar to control the active player. After browsing the lyrics, tap a timed line to seek to it.
 
 ## Permissions and privacy
 
@@ -66,7 +69,6 @@ Long-running behavior may vary with vendor-specific battery restrictions. If the
 | --- | --- |
 | Notification Access | Access public MediaSession data; notification message bodies are not read |
 | Display over other apps | Show the floating lyrics overlay |
-| Nearby devices | Display the connected Bluetooth audio device name |
 | Network access | Search public lyrics and artwork providers |
 | Foreground service | Keep a user-started overlay running in the background |
 
@@ -88,7 +90,7 @@ To build a signed APK, copy `keystore.properties.example` to `keystore.propertie
 
 ## Project information
 
-- Current release: `1.01` (versionCode 101)
+- Current release: `1.03` (versionCode 103)
 - Android package: `com.tcrrry.desktoplyrics`
 - Author: Bilibili `@Tcrrrry`
 

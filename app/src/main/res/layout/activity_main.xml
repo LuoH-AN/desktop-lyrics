@@ -189,7 +189,7 @@
                 android:layout_marginTop="10dp"
                 android:gravity="center"
                 android:lineSpacingExtra="1dp"
-                android:text="本地实时读取 · 直连多源歌词 · 开启期间保持屏幕常亮"
+                android:text="本地实时读取 · 直连多源歌词 · 展开态点“歌词源”可切换"
                 android:textColor="#747C8E"
                 android:textSize="10sp" />
         </LinearLayout>
@@ -277,6 +277,172 @@
                     android:textSize="10sp" />
             </LinearLayout>
 
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:fontFamily="sans-serif-medium"
+                android:text="歌词颜色"
+                android:textColor="#F7F7FA"
+                android:textSize="14sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/bg_ui_pill"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="4dp">
+
+                <TextView
+                    android:id="@+id/lyric_color_white"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="● 白"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/lyric_color_blue"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="● 蓝"
+                    android:textColor="#9FD8FF"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/lyric_color_black"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="● 黑"
+                    android:textColor="#AEB3BF"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/lyric_color_pink"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="● 粉"
+                    android:textColor="#FFB6D5"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/lyric_color_custom"
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/bg_ui_pill"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center"
+                android:text="无级调色 · #FFFFFF"
+                android:textColor="#AEBBFF"
+                android:textSize="11sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="歌词偏移"
+                    android:textColor="#F7F7FA"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/lyric_offset_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="+0.0s"
+                    android:textColor="#AEBBFF"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_lyric_offset"
+                android:layout_width="match_parent"
+                android:layout_height="32dp"
+                android:layout_marginTop="2dp"
+                android:max="100"
+                android:progress="50"
+                android:progressBackgroundTint="#39404F"
+                android:progressTint="#9BAEFF"
+                android:splitTrack="false"
+                android:thumbTint="#F7F7FA" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="点击数值可归零 · 向右让歌词更早出现"
+                android:textColor="#697184"
+                android:textSize="9sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:fontFamily="sans-serif-medium"
+                android:text="外语歌词"
+                android:textColor="#F7F7FA"
+                android:textSize="14sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/bg_ui_pill"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="4dp">
+
+                <TextView
+                    android:id="@+id/translation_original"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="原文"
+                    android:textColor="#9DA4B5"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/translation_bilingual"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_ui_segment_selected"
+                    android:gravity="center"
+                    android:text="双语"
+                    android:textColor="#202331"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/translation_translated"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="中文"
+                    android:textColor="#9DA4B5"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
@@ -348,7 +514,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:gravity="center"
-                android:text="字号与背景设置会实时应用到悬浮窗"
+                android:text="字号、颜色、偏移、翻译与背景设置会实时应用"
                 android:textColor="#626A7C"
                 android:textSize="10sp" />
         </LinearLayout>

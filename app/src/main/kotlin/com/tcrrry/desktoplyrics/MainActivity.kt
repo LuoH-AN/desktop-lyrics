@@ -1,11 +1,11 @@
 package com.tcrrry.desktoplyrics
 
-import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -14,7 +14,7 @@ import android.widget.Button
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -35,6 +35,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var backgroundModeHigh: TextView
     private lateinit var seekFontSize: SeekBar
     private lateinit var fontSizeValue: TextView
+    private lateinit var seekLyricOffset: SeekBar
+    private lateinit var lyricOffsetValue: TextView
+    private lateinit var translationOriginal: TextView
+    private lateinit var translationBilingual: TextView
+    private lateinit var translationTranslated: TextView
+    private lateinit var lyricColorWhite: TextView
+    private lateinit var lyricColorBlue: TextView
+    private lateinit var lyricColorBlack: TextView
+    private lateinit var lyricColorPink: TextView
+    private lateinit var lyricColorCustom: TextView
     private var overlayStateReceiverRegistered = false
 
     private val overlayStateReceiver = object : BroadcastReceiver() {
@@ -46,11 +56,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
-    private val bluetoothPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            startLyricsOverlay()
-        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +71,16 @@ class MainActivity : AppCompatActivity() {
         backgroundModeHigh = findViewById(R.id.background_mode_high)
         seekFontSize = findViewById(R.id.seek_font_size)
         fontSizeValue = findViewById(R.id.font_size_value)
+        seekLyricOffset = findViewById(R.id.seek_lyric_offset)
+        lyricOffsetValue = findViewById(R.id.lyric_offset_value)
+        translationOriginal = findViewById(R.id.translation_original)
+        translationBilingual = findViewById(R.id.translation_bilingual)
+        translationTranslated = findViewById(R.id.translation_translated)
+        lyricColorWhite = findViewById(R.id.lyric_color_white)
+        lyricColorBlue = findViewById(R.id.lyric_color_blue)
+        lyricColorBlack = findViewById(R.id.lyric_color_black)
+        lyricColorPink = findViewById(R.id.lyric_color_pink)
+        lyricColorCustom = findViewById(R.id.lyric_color_custom)
         seekFontSize.max = LyricsOverlayService.FONT_SCALE_MAX_PERCENT -
             LyricsOverlayService.FONT_SCALE_MIN_PERCENT
 
@@ -109,14 +124,7 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-            } else {
-                startLyricsOverlay()
-            }
+            startLyricsOverlay()
         }
 
         backgroundModeTransparent.setOnClickListener {
@@ -141,6 +149,39 @@ class MainActivity : AppCompatActivity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
         })
+        seekLyricOffset.max = 100
+        seekLyricOffset.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val offsetMs = LyricsOverlayService.LYRIC_OFFSET_MIN_MS + progress * 100
+                lyricOffsetValue.text = formatOffset(offsetMs)
+                if (fromUser) setLyricOffset(offsetMs)
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        })
+        lyricOffsetValue.setOnClickListener { setLyricOffset(0) }
+
+        translationOriginal.setOnClickListener {
+            setTranslationMode(LyricsOverlayService.TRANSLATION_ORIGINAL)
+        }
+        translationBilingual.setOnClickListener {
+            setTranslationMode(LyricsOverlayService.TRANSLATION_BILINGUAL)
+        }
+        translationTranslated.setOnClickListener {
+            setTranslationMode(LyricsOverlayService.TRANSLATION_TRANSLATED)
+        }
+
+        listOf(
+            lyricColorWhite to "#FFFFFF",
+            lyricColorBlue to "#9FD8FF",
+            lyricColorBlack to "#111111",
+            lyricColorPink to "#FFB6D5"
+        ).forEach { (option, color) -> option.setOnClickListener { setLyricColor(color) } }
+        lyricColorCustom.setOnClickListener { showColorPickerDialog() }
+        updateLyricOffsetUi()
+        updateTranslationModeUi()
+        updateLyricColorUi()
         updateOverlayUi()
     }
 
@@ -172,6 +213,9 @@ class MainActivity : AppCompatActivity() {
             updateOverlayUi()
             updateBackgroundModeUi()
             updateFontSizeUi()
+            updateLyricOffsetUi()
+            updateTranslationModeUi()
+            updateLyricColorUi()
         }
     }
 
@@ -288,6 +332,192 @@ class MainActivity : AppCompatActivity() {
             option.typeface = android.graphics.Typeface.create(
                 "sans-serif",
                 if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
+            )
+        }
+    }
+
+    private fun setLyricOffset(value: Int) {
+        val normalized = value.coerceIn(
+            LyricsOverlayService.LYRIC_OFFSET_MIN_MS,
+            LyricsOverlayService.LYRIC_OFFSET_MAX_MS
+        )
+        overlayPrefs.edit().putInt(LyricsOverlayService.PREF_LYRIC_OFFSET_MS, normalized).apply()
+        updateLyricOffsetUi()
+        if (LyricsOverlayService.isRunning) {
+            startService(Intent(this, LyricsOverlayService::class.java).apply {
+                action = LyricsOverlayService.ACTION_SET_LYRIC_OFFSET
+                putExtra(LyricsOverlayService.EXTRA_LYRIC_OFFSET_MS, normalized)
+            })
+        }
+    }
+
+    private fun updateLyricOffsetUi() {
+        val value = overlayPrefs.getInt(LyricsOverlayService.PREF_LYRIC_OFFSET_MS, 0)
+            .coerceIn(LyricsOverlayService.LYRIC_OFFSET_MIN_MS, LyricsOverlayService.LYRIC_OFFSET_MAX_MS)
+        lyricOffsetValue.text = formatOffset(value)
+        seekLyricOffset.progress = (value - LyricsOverlayService.LYRIC_OFFSET_MIN_MS) / 100
+    }
+
+    private fun formatOffset(value: Int): String = String.format(
+        java.util.Locale.ROOT,
+        "%+.1fs",
+        value / 1000f
+    )
+
+    private fun setTranslationMode(mode: String) {
+        val normalized = when (mode) {
+            LyricsOverlayService.TRANSLATION_ORIGINAL -> LyricsOverlayService.TRANSLATION_ORIGINAL
+            LyricsOverlayService.TRANSLATION_TRANSLATED -> LyricsOverlayService.TRANSLATION_TRANSLATED
+            else -> LyricsOverlayService.TRANSLATION_BILINGUAL
+        }
+        overlayPrefs.edit().putString(LyricsOverlayService.PREF_TRANSLATION_MODE, normalized).apply()
+        updateTranslationModeUi()
+        if (LyricsOverlayService.isRunning) {
+            startService(Intent(this, LyricsOverlayService::class.java).apply {
+                action = LyricsOverlayService.ACTION_SET_TRANSLATION_MODE
+                putExtra(LyricsOverlayService.EXTRA_TRANSLATION_MODE, normalized)
+            })
+        }
+    }
+
+    private fun updateTranslationModeUi() {
+        val selected = overlayPrefs.getString(
+            LyricsOverlayService.PREF_TRANSLATION_MODE,
+            LyricsOverlayService.TRANSLATION_BILINGUAL
+        )
+        updateSegmentOptions(
+            listOf(
+                translationOriginal to LyricsOverlayService.TRANSLATION_ORIGINAL,
+                translationBilingual to LyricsOverlayService.TRANSLATION_BILINGUAL,
+                translationTranslated to LyricsOverlayService.TRANSLATION_TRANSLATED
+            ),
+            selected.orEmpty()
+        )
+    }
+
+    private fun setLyricColor(color: String) {
+        overlayPrefs.edit().putString(LyricsOverlayService.PREF_LYRIC_COLOR, color).apply()
+        updateLyricColorUi()
+        if (LyricsOverlayService.isRunning) {
+            startService(Intent(this, LyricsOverlayService::class.java).apply {
+                action = LyricsOverlayService.ACTION_SET_LYRIC_COLOR
+                putExtra(LyricsOverlayService.EXTRA_LYRIC_COLOR, color)
+            })
+        }
+    }
+
+    private fun updateLyricColorUi() {
+        val selected = overlayPrefs.getString(
+            LyricsOverlayService.PREF_LYRIC_COLOR,
+            LyricsOverlayService.LYRIC_COLOR_DEFAULT
+        ).orEmpty()
+        val options = listOf(
+            lyricColorWhite to "#FFFFFF",
+            lyricColorBlue to "#9FD8FF",
+            lyricColorBlack to "#111111",
+            lyricColorPink to "#FFB6D5"
+        )
+        options.forEach { (option, color) ->
+            val isSelected = color.equals(selected, ignoreCase = true)
+            option.setBackgroundResource(
+                if (isSelected) R.drawable.bg_ui_segment_selected else android.R.color.transparent
+            )
+            option.setTextColor(
+                Color.parseColor(
+                    if (isSelected) "#202331"
+                    else if (color == "#111111") "#AEB3BF"
+                    else color
+                )
+            )
+            option.alpha = if (isSelected) 1f else 0.62f
+        }
+        val normalized = selected.uppercase(java.util.Locale.ROOT)
+        val isCustom = options.none { (_, color) -> color == normalized }
+        lyricColorCustom.text = "无级调色 · $normalized"
+        lyricColorCustom.setBackgroundResource(
+            if (isCustom) R.drawable.bg_ui_segment_selected else R.drawable.bg_ui_pill
+        )
+        lyricColorCustom.setTextColor(Color.parseColor(if (isCustom) "#202331" else "#AEBBFF"))
+    }
+
+    private fun showColorPickerDialog() {
+        val picker = layoutInflater.inflate(R.layout.dialog_color_picker, null)
+        val preview = picker.findViewById<TextView>(R.id.color_picker_preview)
+        val red = picker.findViewById<SeekBar>(R.id.seek_color_red)
+        val green = picker.findViewById<SeekBar>(R.id.seek_color_green)
+        val blue = picker.findViewById<SeekBar>(R.id.seek_color_blue)
+        val redValue = picker.findViewById<TextView>(R.id.color_red_value)
+        val greenValue = picker.findViewById<TextView>(R.id.color_green_value)
+        val blueValue = picker.findViewById<TextView>(R.id.color_blue_value)
+        val initialHex = overlayPrefs.getString(
+            LyricsOverlayService.PREF_LYRIC_COLOR,
+            LyricsOverlayService.LYRIC_COLOR_DEFAULT
+        ).orEmpty().takeIf { Regex("^#[0-9A-Fa-f]{6}$").matches(it) }
+            ?: LyricsOverlayService.LYRIC_COLOR_DEFAULT
+        val initial = Color.parseColor(initialHex)
+        red.progress = Color.red(initial)
+        green.progress = Color.green(initial)
+        blue.progress = Color.blue(initial)
+        var selectedHex = initialHex.uppercase(java.util.Locale.ROOT)
+
+        fun updatePreview() {
+            val r = red.progress
+            val g = green.progress
+            val b = blue.progress
+            selectedHex = String.format(java.util.Locale.ROOT, "#%02X%02X%02X", r, g, b)
+            redValue.text = r.toString()
+            greenValue.text = g.toString()
+            blueValue.text = b.toString()
+            preview.text = selectedHex
+            preview.setTextColor(if (r * 299 + g * 587 + b * 114 > 150_000) Color.BLACK else Color.WHITE)
+            preview.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 18f * resources.displayMetrics.density
+                setColor(Color.rgb(r, g, b))
+                setStroke((resources.displayMetrics.density + .5f).toInt(), Color.parseColor("#33FFFFFF"))
+            }
+        }
+
+        val listener = object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                updatePreview()
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        }
+        red.setOnSeekBarChangeListener(listener)
+        green.setOnSeekBarChangeListener(listener)
+        blue.setOnSeekBarChangeListener(listener)
+        updatePreview()
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("无级调色")
+            .setView(picker)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("应用", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                setLyricColor(selectedHex)
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun updateSegmentOptions(options: List<Pair<TextView, String>>, selected: String) {
+        options.forEach { (option, value) ->
+            val isSelected = value == selected
+            option.setBackgroundResource(
+                if (isSelected) R.drawable.bg_ui_segment_selected else android.R.color.transparent
+            )
+            option.setTextColor(
+                android.graphics.Color.parseColor(if (isSelected) "#202331" else "#9DA4B5")
+            )
+            option.typeface = android.graphics.Typeface.create(
+                "sans-serif",
+                if (isSelected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
             )
         }
     }

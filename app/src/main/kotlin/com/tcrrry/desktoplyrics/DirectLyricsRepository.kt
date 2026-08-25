@@ -22,16 +22,29 @@ import java.util.concurrent.TimeUnit
 class DirectLyricsRepository {
     data class Result(
         val lyrics: String = "",
+        val translatedLyrics: String = "",
+        val wordLyrics: String = "",
         val durationMs: Long = 0L,
         val cover: String = "",
         val source: String = "",
-        val score: Int = 0
+        val score: Int = 0,
+        val alternatives: List<Result> = emptyList()
     ) {
-        fun toJson(): JSONObject = JSONObject()
+        private fun candidateJson(): JSONObject = JSONObject()
             .put("lyrics", lyrics)
+            .put("translatedLyrics", translatedLyrics)
+            .put("wordLyrics", wordLyrics)
             .put("duration", durationMs)
             .put("cover", cover)
             .put("source", source)
+
+        fun toJson(): JSONObject = candidateJson().put(
+            "alternatives",
+            JSONArray().apply {
+                put(candidateJson())
+                alternatives.forEach { put(it.candidateJson()) }
+            }
+        )
     }
 
     private val executor = Executors.newFixedThreadPool(6) { runnable ->
@@ -46,26 +59,36 @@ class DirectLyricsRepository {
             completion.submit(Callable { queryNetEase(track, artist, includeLyrics = true) })
         )
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(LYRICS_DEADLINE_MS)
-        var best: Result? = null
+        val candidates = mutableListOf<Result>()
+        var completed = 0
+        var firstCandidateAt = 0L
 
         try {
-            repeat(futures.size) {
-                val remaining = deadline - System.nanoTime()
-                if (remaining <= 0L) return@repeat
-                val future = completion.poll(remaining, TimeUnit.NANOSECONDS) ?: return@repeat
+            while (completed < futures.size) {
+                val candidateDeadline = if (firstCandidateAt == 0L) {
+                    deadline
+                } else {
+                    minOf(deadline, firstCandidateAt + TimeUnit.MILLISECONDS.toNanos(SOURCE_GRACE_MS))
+                }
+                val remaining = candidateDeadline - System.nanoTime()
+                if (remaining <= 0L) break
+                val future = completion.poll(remaining, TimeUnit.NANOSECONDS) ?: break
+                completed++
                 val candidate = runCatching { future.get() }.getOrNull()
                     ?.takeIf { it.lyrics.isNotBlank() && it.score >= MIN_ACCEPTABLE_SCORE }
-                if (candidate != null && (best == null || candidate.score > best!!.score)) {
-                    best = candidate
-                }
-                if (candidate != null && candidate.score >= EXACT_MATCH_SCORE) {
-                    return candidate
+                if (candidate != null) {
+                    candidates += candidate
+                    if (firstCandidateAt == 0L) firstCandidateAt = System.nanoTime()
                 }
             }
         } finally {
             futures.forEach { it.cancel(true) }
         }
-        return best ?: Result()
+        val ranked = candidates
+            .distinctBy { "${it.source}\u0000${it.lyrics}" }
+            .sortedByDescending(::qualityRank)
+        val primary = ranked.firstOrNull() ?: return Result()
+        return primary.copy(alternatives = ranked.drop(1))
     }
 
     fun resolveCover(track: String, artist: String): String {
@@ -145,6 +168,7 @@ class DirectLyricsRepository {
                 songs,
                 track,
                 artist,
+                allowCrossScriptFallback = true,
                 isUsable = { item ->
                     !includeLyrics || item.optString("songmid").let { it.isNotBlank() && it != "0" }
                 }
@@ -155,7 +179,7 @@ class DirectLyricsRepository {
 
             val title = song.optString("songname").ifBlank { song.optString("songorig") }
             val singer = song.optJSONArray("singer").joinNames("name")
-            val score = matchScore(track, artist, title, singer)
+            val score = platformMatchScore(track, artist, title, singer)
             val albumMid = song.optString("albummid")
             val albumId = song.optLong("albumid", 0L)
             val cover = when {
@@ -169,12 +193,13 @@ class DirectLyricsRepository {
 
             val songMid = song.optString("songmid")
             val lyricUrl = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg" +
-                "?songmid=${encode(songMid)}&format=json&nobase64=1"
+                "?songmid=${encode(songMid)}&format=json&nobase64=1&trans=1"
             val lyricRoot = parseJsonFlexible(getBytes(lyricUrl, headers)) ?: continue
             val lyrics = unescapeHtml(lyricRoot.optString("lyric"))
             if (lyrics.isBlank()) continue
             return Result(
                 lyrics = lyrics,
+                translatedLyrics = unescapeHtml(lyricRoot.optString("trans")),
                 durationMs = song.optLong("interval", 0L) * 1000L,
                 cover = cover,
                 source = "QQ音乐",
@@ -201,6 +226,7 @@ class DirectLyricsRepository {
                 songs,
                 track,
                 artist,
+                allowCrossScriptFallback = true,
                 isUsable = { item -> item.optLong("id", 0L) > 0L }
             ) { item ->
                 val artists = (item.optJSONArray("artists") ?: item.optJSONArray("ar")).joinNames("name")
@@ -212,7 +238,7 @@ class DirectLyricsRepository {
 
         val title = song.optString("name")
         val singer = (song.optJSONArray("artists") ?: song.optJSONArray("ar")).joinNames("name")
-        val score = matchScore(track, artist, title, singer)
+        val score = platformMatchScore(track, artist, title, singer)
         val album = song.optJSONObject("album") ?: song.optJSONObject("al")
         var cover = album?.optString("picUrl").orEmpty()
         val songId = song.optLong("id", 0L)
@@ -227,12 +253,17 @@ class DirectLyricsRepository {
         if (!includeLyrics) return Result(cover = cover, source = "网易云音乐", score = score)
         if (songId <= 0L) return null
 
-        val lyricUrl = "https://music.163.com/api/song/lyric?os=pc&id=$songId&lv=-1&kv=-1&tv=-1"
+        val lyricUrl = "https://music.163.com/api/song/lyric?os=pc&id=$songId" +
+            "&lv=-1&kv=-1&tv=-1&yv=-1&rv=-1"
         val lyricRoot = JSONObject(getText(lyricUrl, headers))
         val lyrics = lyricRoot.optJSONObject("lrc")?.optString("lyric").orEmpty()
         if (lyrics.isBlank()) return null
         return Result(
             lyrics = lyrics,
+            translatedLyrics = lyricRoot.optJSONObject("tlyric")?.optString("lyric").orEmpty(),
+            wordLyrics = lyricRoot.optJSONObject("yrc")?.optString("lyric")
+                .orEmpty()
+                .ifBlank { lyricRoot.optJSONObject("klyric")?.optString("lyric").orEmpty() },
             durationMs = song.optLong("duration", song.optLong("dt", 0L)),
             cover = cover,
             source = "网易云音乐",
@@ -244,6 +275,7 @@ class DirectLyricsRepository {
         array: JSONArray,
         track: String,
         artist: String,
+        allowCrossScriptFallback: Boolean = false,
         isUsable: (JSONObject) -> Boolean = { true },
         fields: (JSONObject) -> Triple<String, String, JSONObject>
     ): JSONObject? {
@@ -253,6 +285,13 @@ class DirectLyricsRepository {
             val (title, singer, value) = fields(item)
             val score = matchScore(track, artist, title, singer)
             if (score >= MIN_ACCEPTABLE_SCORE) return value
+            if (allowCrossScriptFallback && index == 0 && isCrossScriptFallback(
+                    track,
+                    artist,
+                    title,
+                    singer
+                )
+            ) return value
         }
         return null
     }
@@ -295,6 +334,35 @@ class DirectLyricsRepository {
         return titleScore + artistScore
     }
 
+    private fun platformMatchScore(
+        track: String,
+        artist: String,
+        candidateTrack: String,
+        candidateArtist: String
+    ): Int {
+        val strict = matchScore(track, artist, candidateTrack, candidateArtist)
+        return if (strict >= MIN_ACCEPTABLE_SCORE) strict
+        else if (isCrossScriptFallback(track, artist, candidateTrack, candidateArtist)) EXACT_SEARCH_SCORE
+        else strict
+    }
+
+    private fun isCrossScriptFallback(
+        track: String,
+        artist: String,
+        candidateTrack: String,
+        candidateArtist: String
+    ): Boolean {
+        val wanted = "$track $artist"
+        val found = "$candidateTrack $candidateArtist"
+        val wantedHasLatin = Regex("[A-Za-z]").containsMatchIn(wanted)
+        val wantedHasCjk = Regex("[\\u3040-\\u30FF\\u3400-\\u9FFF\\uAC00-\\uD7AF]")
+            .containsMatchIn(wanted)
+        val foundHasLatin = Regex("[A-Za-z]").containsMatchIn(found)
+        val foundHasCjk = Regex("[\\u3040-\\u30FF\\u3400-\\u9FFF\\uAC00-\\uD7AF]")
+            .containsMatchIn(found)
+        return (wantedHasLatin && foundHasCjk) || (wantedHasCjk && foundHasLatin)
+    }
+
     private fun normalize(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC)
         .lowercase(Locale.ROOT)
         .replace(Regex("[（(\\[].*?(live|remaster|版|伴奏|纯音乐|翻唱).*?[）)\\]]", RegexOption.IGNORE_CASE), "")
@@ -306,6 +374,15 @@ class DirectLyricsRepository {
         while (same < limit && first[same] == second[same]) same++
         return same.toDouble() / maxOf(first.length, second.length).toDouble()
     }
+
+    private fun qualityRank(result: Result): Int = result.score * 100 +
+        (if (result.wordLyrics.isNotBlank()) 24 else 0) +
+        (if (result.translatedLyrics.isNotBlank()) 12 else 0) +
+        when (result.source) {
+            "网易云音乐" -> 4
+            "QQ音乐" -> 2
+            else -> 0
+        }
 
     private fun JSONArray?.joinNames(key: String): String {
         if (this == null) return ""
@@ -367,10 +444,12 @@ class DirectLyricsRepository {
         private const val CONNECT_TIMEOUT_MS = 3_000
         private const val READ_TIMEOUT_MS = 6_000
         private const val LYRICS_DEADLINE_MS = 10_000L
+        private const val SOURCE_GRACE_MS = 5_000L
         private const val COVER_DEADLINE_MS = 6_000L
         private const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
         private const val MIN_ACCEPTABLE_SCORE = 50
         private const val EXACT_MATCH_SCORE = 95
+        private const val EXACT_SEARCH_SCORE = 100
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36"
     }

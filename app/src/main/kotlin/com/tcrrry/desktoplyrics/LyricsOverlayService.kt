@@ -5,8 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.Manifest
-import android.bluetooth.BluetoothManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -17,8 +15,6 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
-import android.media.AudioDeviceCallback
-import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -93,8 +89,10 @@ class LyricsOverlayService : Service() {
     private var overlayRotated = false
     private var backgroundMode = BACKGROUND_DEFAULT
     private var fontScalePercent = FONT_SCALE_DEFAULT_PERCENT
+    private var lyricColor = LYRIC_COLOR_DEFAULT
+    private var lyricOffsetMs = 0
+    private var translationMode = TRANSLATION_BILINGUAL
     private var monitorStarted = false
-    private var audioRouteMonitorStarted = false
     private var lastDisplayWidth = 0
     private var lastDisplayHeight = 0
     private var currentController: MediaController? = null
@@ -102,6 +100,7 @@ class LyricsOverlayService : Service() {
     private var cachedArtworkKey = ""
     private var cachedArtworkDataUrl = ""
     private var snapshotScheduled = false
+    private var closeBlockedUntilElapsedMs = 0L
     @Volatile private var latestLyricsRequestId = 0
 
     private val dispatchRunnable = Runnable {
@@ -127,11 +126,6 @@ class LyricsOverlayService : Service() {
             selectController(controllers.orEmpty())
         }
 
-    private val audioDeviceCallback = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) = scheduleSnapshot()
-        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) = scheduleSnapshot()
-    }
-
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -149,6 +143,12 @@ class LyricsOverlayService : Service() {
         )
         fontScalePercent = normalizedFontScale(
             prefs.getInt(PREF_FONT_SCALE_PERCENT, FONT_SCALE_DEFAULT_PERCENT)
+        )
+        lyricColor = normalizedLyricColor(prefs.getString(PREF_LYRIC_COLOR, LYRIC_COLOR_DEFAULT))
+        lyricOffsetMs = prefs.getInt(PREF_LYRIC_OFFSET_MS, 0)
+            .coerceIn(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
+        translationMode = normalizedTranslationMode(
+            prefs.getString(PREF_TRANSLATION_MODE, TRANSLATION_BILINGUAL)
         )
         overlayRotated = prefs.getBoolean(PREF_OVERLAY_ROTATED, false)
         createNotificationChannel()
@@ -176,6 +176,30 @@ class LyricsOverlayService : Service() {
             )
             prefs.edit().putInt(PREF_FONT_SCALE_PERCENT, fontScalePercent).apply()
             applyFontScale(previousPercent, adjustCompactHeight = true)
+            if (overlayRoot != null) return START_STICKY
+        }
+
+        if (intent?.action == ACTION_SET_LYRIC_COLOR) {
+            lyricColor = normalizedLyricColor(intent.getStringExtra(EXTRA_LYRIC_COLOR))
+            prefs.edit().putString(PREF_LYRIC_COLOR, lyricColor).apply()
+            applyLyricColor()
+            if (overlayRoot != null) return START_STICKY
+        }
+
+        if (intent?.action == ACTION_SET_LYRIC_OFFSET) {
+            lyricOffsetMs = intent.getIntExtra(EXTRA_LYRIC_OFFSET_MS, 0)
+                .coerceIn(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
+            prefs.edit().putInt(PREF_LYRIC_OFFSET_MS, lyricOffsetMs).apply()
+            applyLyricOffset()
+            if (overlayRoot != null) return START_STICKY
+        }
+
+        if (intent?.action == ACTION_SET_TRANSLATION_MODE) {
+            translationMode = normalizedTranslationMode(
+                intent.getStringExtra(EXTRA_TRANSLATION_MODE)
+            )
+            prefs.edit().putString(PREF_TRANSLATION_MODE, translationMode).apply()
+            applyTranslationMode()
             if (overlayRoot != null) return START_STICKY
         }
 
@@ -230,6 +254,45 @@ class LyricsOverlayService : Service() {
     }
 
     private inner class LyricsJavascriptBridge {
+        @JavascriptInterface
+        fun mediaCommand(command: String) {
+            mainHandler.post {
+                val controller = currentController ?: return@post
+                runCatching {
+                    when (command) {
+                        "play" -> controller.transportControls.play()
+                        "pause" -> controller.transportControls.pause()
+                        "previous" -> controller.transportControls.skipToPrevious()
+                        "next" -> controller.transportControls.skipToNext()
+                        else -> return@runCatching
+                    }
+                }.onFailure {
+                    Log.w(LOG_TAG, "Media command failed: $command", it)
+                }
+                mainHandler.postDelayed({ scheduleSnapshot() }, 180L)
+            }
+        }
+
+        @JavascriptInterface
+        fun mediaSeek(positionMs: Double) {
+            if (!positionMs.isFinite()) return
+            mainHandler.post {
+                val controller = currentController ?: return@post
+                val duration = controller.metadata
+                    ?.getLong(MediaMetadata.METADATA_KEY_DURATION)
+                    ?.coerceAtLeast(0L)
+                    ?: 0L
+                val requested = positionMs.toLong().coerceAtLeast(0L)
+                val target = if (duration > 0L) requested.coerceAtMost(duration) else requested
+                runCatching {
+                    controller.transportControls.seekTo(target)
+                }.onFailure {
+                    Log.w(LOG_TAG, "Media seek failed: $target", it)
+                }
+                mainHandler.postDelayed({ scheduleSnapshot() }, 180L)
+            }
+        }
+
         @JavascriptInterface
         fun requestLyrics(track: String, artist: String, requestId: Int, needsRemoteCover: Boolean) {
             if (track.isBlank() || requestId <= 0) return
@@ -447,7 +510,9 @@ class LyricsOverlayService : Service() {
         dragTouchArea = dragArea
 
         val closeControl = chromeButton("") {
-            stopSelf()
+            if (SystemClock.elapsedRealtime() >= closeBlockedUntilElapsedMs) {
+                stopSelf()
+            }
         }.apply {
             contentDescription = "关闭悬浮窗"
             setChromeIcon(this, R.drawable.ic_overlay_close)
@@ -657,6 +722,9 @@ class LyricsOverlayService : Service() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     webReady = true
                     applyFontScale(fontScalePercent, adjustCompactHeight = false)
+                    applyLyricColor()
+                    applyLyricOffset()
+                    applyTranslationMode()
                     evaluateJavascript(
                         "window.LobstaOverlay && window.LobstaOverlay.setCompact($compact);",
                         null
@@ -765,7 +833,7 @@ class LyricsOverlayService : Service() {
     private fun minimumOverlayWidth(screenWidth: Int = currentDisplaySize().first): Int {
         val oneThirdScreen = screenWidth / 3
         val requestedMinimum = oneThirdScreen.coerceIn(dp(112), dp(140))
-        return min(requestedMinimum, max(1, screenWidth - dp(DISPLAY_EDGE_MARGIN_DP)))
+        return min(requestedMinimum, max(1, screenWidth))
     }
 
     private fun fittedOverlaySize(
@@ -775,7 +843,10 @@ class LyricsOverlayService : Service() {
         screenWidth: Int,
         screenHeight: Int
     ): Pair<Int, Int> {
-        val maxWidth = max(1, screenWidth - dp(DISPLAY_EDGE_MARGIN_DP))
+        // Safe display bounds already exclude system bars and cutouts. Allow users to
+        // align an overlay exactly to both horizontal edges without losing 8dp again
+        // when the size is re-fitted during a compact/expanded transition.
+        val maxWidth = max(1, screenWidth)
         val minWidth = minimumOverlayWidth(screenWidth).coerceAtMost(maxWidth)
         val maxHeight = max(1, screenHeight - dp(DISPLAY_EDGE_MARGIN_DP))
         val requestedMinHeight = if (isCompact) {
@@ -934,6 +1005,9 @@ class LyricsOverlayService : Service() {
     }
 
     private fun setCompactUi(value: Boolean) {
+        if (compact != value) {
+            closeBlockedUntilElapsedMs = SystemClock.elapsedRealtime() + CLOSE_GUARD_AFTER_TOGGLE_MS
+        }
         compact = value
         prefs.edit().putBoolean("compact", compact).apply()
         overlayContent?.background = overlayBackground(compact)
@@ -992,11 +1066,45 @@ class LyricsOverlayService : Service() {
             .apply()
     }
 
+    private fun applyLyricColor() {
+        val encoded = JSONObject.quote(lyricColor)
+        webView?.evaluateJavascript(
+            "window.LobstaOverlay && window.LobstaOverlay.setLyricColor($encoded);",
+            null
+        )
+    }
+
+    private fun applyLyricOffset() {
+        webView?.evaluateJavascript(
+            "window.LobstaOverlay && window.LobstaOverlay.setLyricOffset($lyricOffsetMs);",
+            null
+        )
+    }
+
+    private fun applyTranslationMode() {
+        val encoded = JSONObject.quote(translationMode)
+        webView?.evaluateJavascript(
+            "window.LobstaOverlay && window.LobstaOverlay.setTranslationMode($encoded);",
+            null
+        )
+    }
+
     private fun normalizedBackgroundMode(value: String?): String = when (value) {
         BACKGROUND_TRANSPARENT -> BACKGROUND_TRANSPARENT
         BACKGROUND_LOW -> BACKGROUND_LOW
         BACKGROUND_HIGH -> BACKGROUND_HIGH
         else -> BACKGROUND_DEFAULT
+    }
+
+    private fun normalizedLyricColor(value: String?): String {
+        val normalized = value.orEmpty().uppercase(Locale.ROOT)
+        return if (Regex("^#[0-9A-F]{6}$").matches(normalized)) normalized else LYRIC_COLOR_DEFAULT
+    }
+
+    private fun normalizedTranslationMode(value: String?): String = when (value) {
+        TRANSLATION_ORIGINAL -> TRANSLATION_ORIGINAL
+        TRANSLATION_TRANSLATED -> TRANSLATION_TRANSLATED
+        else -> TRANSLATION_BILINGUAL
     }
 
     private fun normalizedFontScale(value: Int): Int =
@@ -1023,23 +1131,33 @@ class LyricsOverlayService : Service() {
             closeButton?.let(chrome::addView)
         } else {
             rotateButton?.let(chrome::addView)
+            chrome.addView(
+                View(this),
+                LinearLayout.LayoutParams(dp(6), ViewGroup.LayoutParams.MATCH_PARENT)
+            )
             scaleButton?.let(chrome::addView)
+            chrome.addView(
+                View(this),
+                LinearLayout.LayoutParams(dp(6), ViewGroup.LayoutParams.MATCH_PARENT)
+            )
             closeButton?.let(chrome::addView)
         }
 
         val params = (chrome.layoutParams as? FrameLayout.LayoutParams)
             ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(28))
         params.width = if (isCompact) dp(26) else ViewGroup.LayoutParams.WRAP_CONTENT
-        params.height = if (isCompact) ViewGroup.LayoutParams.MATCH_PARENT else dp(24)
+        params.height = if (isCompact) ViewGroup.LayoutParams.MATCH_PARENT else dp(32)
         params.gravity = if (isCompact) {
             Gravity.END or Gravity.CENTER_VERTICAL
         } else {
             Gravity.END or Gravity.TOP
         }
-        params.setMargins(0, if (isCompact) 0 else dp(16), if (isCompact) 0 else dp(17), 0)
+        params.setMargins(0, if (isCompact) 0 else dp(12), if (isCompact) 0 else dp(17), 0)
         chrome.layoutParams = params
 
         if (isCompact) {
+            closeButton?.translationX = dp(3).toFloat()
+            scaleButton?.translationX = dp(3).toFloat()
             closeButton?.layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -1051,9 +1169,12 @@ class LyricsOverlayService : Service() {
                 1f
             )
         } else {
-            rotateButton?.layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
-            closeButton?.layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
-            scaleButton?.layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
+            rotateButton?.translationX = 0f
+            closeButton?.translationX = 0f
+            scaleButton?.translationX = 0f
+            rotateButton?.layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
+            closeButton?.layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
+            scaleButton?.layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
         }
         chrome.requestLayout()
 
@@ -1064,7 +1185,9 @@ class LyricsOverlayService : Service() {
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
             areaParams.width = ViewGroup.LayoutParams.MATCH_PARENT
-            areaParams.height = if (isCompact) ViewGroup.LayoutParams.MATCH_PARENT else dp(112)
+            // Keep the metadata header draggable, but stop before the chips row so
+            // the WebView can receive taps on the interactive lyrics-source chip.
+            areaParams.height = if (isCompact) ViewGroup.LayoutParams.MATCH_PARENT else dp(78)
             areaParams.gravity = Gravity.TOP
             area.layoutParams = areaParams
             area.requestLayout()
@@ -1076,7 +1199,6 @@ class LyricsOverlayService : Service() {
             refreshActiveSessions()
             return
         }
-        startAudioRouteMonitor()
         try {
             sessionManager.addOnActiveSessionsChangedListener(activeSessionsListener, listenerComponent)
             monitorStarted = true
@@ -1096,7 +1218,6 @@ class LyricsOverlayService : Service() {
 
     private fun stopMediaMonitor() {
         mainHandler.removeCallbacks(sessionRefreshRunnable)
-        stopAudioRouteMonitor()
         if (monitorStarted) {
             try {
                 sessionManager.removeOnActiveSessionsChangedListener(activeSessionsListener)
@@ -1106,24 +1227,6 @@ class LyricsOverlayService : Service() {
         monitorStarted = false
         currentController?.unregisterCallback(controllerCallback)
         currentController = null
-    }
-
-    private fun startAudioRouteMonitor() {
-        if (audioRouteMonitorStarted) return
-        try {
-            audioManager.registerAudioDeviceCallback(audioDeviceCallback, mainHandler)
-            audioRouteMonitorStarted = true
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun stopAudioRouteMonitor() {
-        if (!audioRouteMonitorStarted) return
-        try {
-            audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
-        } catch (_: Exception) {
-        }
-        audioRouteMonitorStarted = false
     }
 
     private fun refreshActiveSessions() {
@@ -1235,6 +1338,7 @@ class LyricsOverlayService : Service() {
             else -> "paused"
         }
         val speed = playback?.playbackSpeed?.toDouble() ?: 0.0
+        val actions = playback?.actions ?: 0L
         val position = currentPosition(playback, duration)
         val artwork = artworkDataUrl(metadata, "$title\u0000$artist\u0000$album")
 
@@ -1249,10 +1353,20 @@ class LyricsOverlayService : Service() {
             .put("positionMs", position)
             .put("durationMs", max(0L, duration))
             .put("speed", if (speed.isFinite()) speed else 1.0)
+            .put(
+                "canPlay",
+                actions and (PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PLAY_PAUSE) != 0L
+            )
+            .put(
+                "canPause",
+                actions and (PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE) != 0L
+            )
+            .put("canPrevious", actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS != 0L)
+            .put("canNext", actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L)
+            .put("canSeek", actions and PlaybackState.ACTION_SEEK_TO != 0L)
             .put("capturedAtMs", System.currentTimeMillis())
             .put("cover", artwork)
             .put("volumePct", mediaVolumePercent())
-            .put("audioDevice", currentAudioDeviceLabel())
     }
 
     private fun mediaVolumePercent(): Int {
@@ -1263,119 +1377,6 @@ class LyricsOverlayService : Service() {
         } catch (_: Exception) {
             0
         }
-    }
-
-    private fun currentAudioDeviceLabel(): String {
-        return try {
-            val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            val selected = devices.maxByOrNull(::audioDeviceScore)
-            if (selected == null) return "未知设备"
-            val productName = selected.productName?.toString()?.trim().orEmpty()
-            if (selected.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-                audioDeviceTypeLabel(selected.type)
-            } else if (isBluetoothAudioDevice(selected.type)) {
-                connectedBluetoothName(selected)
-                    ?: productName.takeUnless(::isLikelyPhoneName)
-                    ?: audioDeviceTypeLabel(selected.type)
-            } else {
-                productName.ifBlank { audioDeviceTypeLabel(selected.type) }
-            }
-        } catch (_: Exception) {
-            "未知设备"
-        }
-    }
-
-    private fun audioDeviceScore(device: AudioDeviceInfo): Int {
-        var score = audioDevicePriority(device.type)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val address = device.address.trim()
-            if (address.isNotBlank() && address != "00:00:00:00:00:00") score += 5
-        }
-        val productName = device.productName?.toString()?.trim().orEmpty()
-        if (productName.isNotBlank() && !isLikelyPhoneName(productName)) score += 2
-        return score
-    }
-
-    private fun isBluetoothAudioDevice(type: Int): Boolean = type in setOf(
-        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-        AudioDeviceInfo.TYPE_BLE_HEADSET,
-        AudioDeviceInfo.TYPE_BLE_SPEAKER
-    )
-
-    @SuppressLint("MissingPermission")
-    private fun connectedBluetoothName(audioDevice: AudioDeviceInfo): String? {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) !=
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) return null
-
-        return try {
-            val address = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                audioDevice.address.trim()
-            } else {
-                ""
-            }
-            if (address.isBlank()) return null
-            val adapter = getSystemService(BluetoothManager::class.java)?.adapter ?: return null
-            val remoteName = runCatching { adapter.getRemoteDevice(address).name }.getOrNull()
-            val bondedName = adapter.bondedDevices
-                .firstOrNull { it.address.equals(address, ignoreCase = true) }
-                ?.name
-            (remoteName ?: bondedName)
-                ?.trim()
-                ?.takeIf { it.isNotBlank() && !isLikelyPhoneName(it) }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun isLikelyPhoneName(value: String): Boolean {
-        val normalized = value.trim().lowercase(Locale.ROOT).replace(" ", "")
-        if (normalized.isBlank()) return true
-        return listOf(
-            Build.MODEL,
-            Build.DEVICE,
-            Build.PRODUCT,
-            "${Build.MANUFACTURER}${Build.MODEL}"
-        ).any { localName ->
-            val local = localName.trim().lowercase(Locale.ROOT).replace(" ", "")
-            local.isNotBlank() && (normalized == local || normalized.contains(local))
-        }
-    }
-
-    private fun audioDevicePriority(type: Int): Int = when (type) {
-        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> 120
-        AudioDeviceInfo.TYPE_BLE_HEADSET,
-        AudioDeviceInfo.TYPE_BLE_SPEAKER -> 115
-        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> 100
-        AudioDeviceInfo.TYPE_USB_HEADSET,
-        AudioDeviceInfo.TYPE_USB_DEVICE,
-        AudioDeviceInfo.TYPE_USB_ACCESSORY -> 90
-        AudioDeviceInfo.TYPE_WIRED_HEADSET,
-        AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> 80
-        AudioDeviceInfo.TYPE_HDMI,
-        AudioDeviceInfo.TYPE_HDMI_ARC,
-        AudioDeviceInfo.TYPE_HDMI_EARC -> 70
-        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> 50
-        else -> 10
-    }
-
-    private fun audioDeviceTypeLabel(type: Int): String = when (type) {
-        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-        AudioDeviceInfo.TYPE_BLE_HEADSET,
-        AudioDeviceInfo.TYPE_BLE_SPEAKER -> "蓝牙音频"
-        AudioDeviceInfo.TYPE_USB_HEADSET,
-        AudioDeviceInfo.TYPE_USB_DEVICE,
-        AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB 音频"
-        AudioDeviceInfo.TYPE_WIRED_HEADSET,
-        AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "有线耳机"
-        AudioDeviceInfo.TYPE_HDMI,
-        AudioDeviceInfo.TYPE_HDMI_ARC,
-        AudioDeviceInfo.TYPE_HDMI_EARC -> "HDMI 音频"
-        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "手机扬声器"
-        else -> "音频设备"
     }
 
     private fun currentPosition(state: PlaybackState?, duration: Long): Long {
@@ -1461,12 +1462,21 @@ class LyricsOverlayService : Service() {
         const val ACTION_STATE_CHANGED = "com.tcrrry.desktoplyrics.action.LYRICS_OVERLAY_STATE_CHANGED"
         const val ACTION_SET_BACKGROUND = "com.tcrrry.desktoplyrics.action.SET_LYRICS_BACKGROUND"
         const val ACTION_SET_FONT_SCALE = "com.tcrrry.desktoplyrics.action.SET_LYRICS_FONT_SCALE"
+        const val ACTION_SET_LYRIC_COLOR = "com.tcrrry.desktoplyrics.action.SET_LYRIC_COLOR"
+        const val ACTION_SET_LYRIC_OFFSET = "com.tcrrry.desktoplyrics.action.SET_LYRIC_OFFSET"
+        const val ACTION_SET_TRANSLATION_MODE = "com.tcrrry.desktoplyrics.action.SET_TRANSLATION_MODE"
         const val EXTRA_BACKGROUND_MODE = "background_mode"
         const val EXTRA_FONT_SCALE_PERCENT = "font_scale_percent"
+        const val EXTRA_LYRIC_COLOR = "lyric_color"
+        const val EXTRA_LYRIC_OFFSET_MS = "lyric_offset_ms"
+        const val EXTRA_TRANSLATION_MODE = "translation_mode"
         const val EXTRA_RUNNING = "running"
         const val PREFS_NAME = "lyrics_overlay_prefs"
         const val PREF_BACKGROUND_MODE = "background_mode"
         const val PREF_FONT_SCALE_PERCENT = "font_scale_percent"
+        const val PREF_LYRIC_COLOR = "lyric_color_v1"
+        const val PREF_LYRIC_OFFSET_MS = "lyric_offset_ms_v1"
+        const val PREF_TRANSLATION_MODE = "translation_mode_v1"
         private const val PREF_COMPACT_WIDTH = "compact_width_v1"
         private const val PREF_OVERLAY_ROTATED = "overlay_rotated_v1"
         const val BACKGROUND_TRANSPARENT = "transparent"
@@ -1476,6 +1486,12 @@ class LyricsOverlayService : Service() {
         const val FONT_SCALE_MIN_PERCENT = 35
         const val FONT_SCALE_MAX_PERCENT = 150
         const val FONT_SCALE_DEFAULT_PERCENT = 100
+        const val LYRIC_COLOR_DEFAULT = "#FFFFFF"
+        const val LYRIC_OFFSET_MIN_MS = -5_000
+        const val LYRIC_OFFSET_MAX_MS = 5_000
+        const val TRANSLATION_ORIGINAL = "original"
+        const val TRANSLATION_BILINGUAL = "bilingual"
+        const val TRANSLATION_TRANSLATED = "translated"
 
         fun compactMinimumHeightDp(percent: Int): Int {
             val scale = percent.coerceIn(FONT_SCALE_MIN_PERCENT, FONT_SCALE_MAX_PERCENT) / 100f
@@ -1485,6 +1501,7 @@ class LyricsOverlayService : Service() {
         private const val CHANNEL_ID = "lobsta_lyrics_overlay"
         private const val COMPACT_MAX_HEIGHT_DP = 130
         private const val DISPLAY_EDGE_MARGIN_DP = 8
+        private const val CLOSE_GUARD_AFTER_TOGGLE_MS = 650L
         private const val NOTIFICATION_ID = 4202
 
         @Volatile

@@ -20,8 +20,8 @@ android {
         applicationId = "com.tcrrry.desktoplyrics"
         minSdk = 26
         targetSdk = 34
-        versionCode = 101
-        versionName = "1.01"
+        versionCode = 103
+        versionName = "1.03"
     }
 
     signingConfigs {
@@ -36,6 +36,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-test"
+        }
         release {
             signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = false
