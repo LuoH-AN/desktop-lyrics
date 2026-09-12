@@ -28,20 +28,23 @@ Watch on Bilibili: [Desktop Lyrics for Android — Apple Music / Spotify real-ti
 ## Highlights
 
 - Local, real-time track title, artist, album, playback state, progress, and artwork
-- Synchronized lyrics and fallback artwork selected by track and artist across LRCLIB, QQ Music, and NetEase Cloud Music
+- Parallel searches across LRCLIB, QQ Music, and NetEase Cloud Music, ranked by title, artist, album, duration, and version metadata; an iTunes catalog lookup can supply localized aliases when every direct search fails
 - NetEase word-timed lyrics and official translations, with original, bilingual, or translated display modes and manual source switching
 - In-overlay previous, play/pause, and next controls, plus a seekable progress bar
 - Full and compact overlay modes with continuous free resizing and dragging
 - Rotate all full-overlay content by 90° inside a fixed outer frame without rotating the system UI; the horizontal view uses a 25% media / 75% lyrics split
+- Double-tap the resize icon for an immersive full-screen lyrics view with its own portrait/landscape rotation
 - Time-aware, one-direction lyric scrolling in compact mode
 - Manual lyric browsing with inertial scrolling; tap a timed lyric line to seek, with automatic live-follow recovery
 - Adjustable lyric font size from 35% to 150%, with a responsive minimum height
-- Color presets, a full RGB color picker, and a ±5-second lyric timing offset
+- Color presets, a full RGB color picker, and a ±5-second lyric timing offset remembered separately for each track and lyrics source
+- Untimed plain lyrics remain usable with a clear label and smooth progress-based scrolling
+- Optional on-device translation with downloadable ML Kit language packs, plus editable DeepSeek, GLM, Gemini, or custom Chat Completions-compatible API profiles
 - Transparent, low-load, and high-load animated album-color backgrounds
 - Media volume plus responsive playback controls and marquee information pills for narrow overlays
 - A minimum width of roughly one third of the screen, with seamless marquee titles
 - Keeps the screen awake while the overlay is visible and releases that behavior when closed
-- Skips unusable or wrong-artist matches, retries without soundtrack qualifiers when needed, and allows up to 10 seconds on slow networks
+- Tries multiple candidates, rejects empty lyrics and provider placeholder messages, supports symbol-only titles and cross-script aliases, and allows up to 10 seconds on slow networks
 
 ## Requirements and compatibility
 
@@ -72,7 +75,7 @@ Long-running behavior may vary with vendor-specific battery restrictions. If the
 | Network access | Search public lyrics and artwork providers |
 | Foreground service | Keep a user-started overlay running in the background |
 
-Desktop Lyrics does not request location or microphone permission, upload location data, or upload a complete listening history. See [PRIVACY.md](./PRIVACY.md) for details.
+Desktop Lyrics does not request location or microphone permission, upload location data, or upload a complete listening history. When all direct lyrics searches fail, an iTunes Search request may be used only to resolve localized track and artist aliases. Optional translation sends lyrics only to the translation mode or API selected by the user. See [PRIVACY.md](./PRIVACY.md) for details.
 
 ## Lyrics and artwork providers
 
@@ -90,7 +93,7 @@ To build a signed APK, copy `keystore.properties.example` to `keystore.propertie
 
 ## Project information
 
-- Current release: `1.03` (versionCode 103)
+- Current release: `1.04` (versionCode 104)
 - Android package: `com.tcrrry.desktoplyrics`
 - Author: Bilibili `@Tcrrrry`
 

@@ -177,7 +177,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="3dp"
                         android:lineSpacingExtra="1dp"
-                        android:text="单点切换标准 / 收起，长按拖动自定义尺寸；展开态可将整个悬浮窗旋转 90°"
+                        android:text="单点切换标准 / 收起，双击进入全屏歌词，长按拖动自定义尺寸；展开态可将整个悬浮窗旋转 90°"
                         android:textColor="#989FAF"
                         android:textSize="11sp" />
                 </LinearLayout>
@@ -348,51 +348,6 @@
                 android:textColor="#AEBBFF"
                 android:textSize="11sp" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:fontFamily="sans-serif-medium"
-                    android:text="歌词偏移"
-                    android:textColor="#F7F7FA"
-                    android:textSize="14sp" />
-
-                <TextView
-                    android:id="@+id/lyric_offset_value"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="+0.0s"
-                    android:textColor="#AEBBFF"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <SeekBar
-                android:id="@+id/seek_lyric_offset"
-                android:layout_width="match_parent"
-                android:layout_height="32dp"
-                android:layout_marginTop="2dp"
-                android:max="100"
-                android:progress="50"
-                android:progressBackgroundTint="#39404F"
-                android:progressTint="#9BAEFF"
-                android:splitTrack="false"
-                android:thumbTint="#F7F7FA" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="点击数值可归零 · 向右让歌词更早出现"
-                android:textColor="#697184"
-                android:textSize="9sp" />
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -442,6 +397,70 @@
                     android:textColor="#9DA4B5"
                     android:textSize="12sp" />
             </LinearLayout>
+
+            <Button
+                android:id="@+id/btn_supplement_translation"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/bg_ui_pill"
+                android:text="补充翻译 · 语言包与 API"
+                android:textColor="#F7F7FA" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="歌词偏移"
+                    android:textColor="#F7F7FA"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/lyric_offset_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="+0.0s"
+                    android:textColor="#AEBBFF"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_lyric_offset"
+                android:layout_width="match_parent"
+                android:layout_height="32dp"
+                android:layout_marginTop="2dp"
+                android:max="100"
+                android:progress="50"
+                android:progressBackgroundTint="#39404F"
+                android:progressTint="#9BAEFF"
+                android:splitTrack="false"
+                android:thumbTint="#F7F7FA" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="当前偏移会按歌曲和歌词源分别记忆"
+                android:textColor="#697184"
+                android:textSize="9sp" />
+
+            <Button
+                android:id="@+id/btn_manage_lyric_offsets"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/bg_ui_pill"
+                android:text="管理偏移记忆"
+                android:textColor="#AEBBFF"
+                android:textSize="11sp" />
 
             <View
                 android:layout_width="match_parent"

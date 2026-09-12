@@ -190,7 +190,12 @@
       transition:transform .48s cubic-bezier(.22,.75,.18,1);
       will-change:transform;
     }
-    #lyrics.manual-dragging { transition:none; }
+    #lyrics.manual-dragging,#lyrics.plain-scrolling { transition:none; }
+    #lyrics.plain-mode .line,#lyrics.plain-mode .line.near,#lyrics.plain-mode .line.past,
+    #lyrics.plain-mode .line.active {
+      color:rgb(var(--lyric-rgb)); opacity:1; filter:none; transform:none;
+      font-size:var(--lyric-active-size); font-weight:760;
+    }
     .line {
       padding:var(--lyric-line-padding) 5px; color:rgba(var(--lyric-rgb),.34); font-size:var(--lyric-font-size); line-height:1.35; font-weight:620;
       transform-origin:left center; filter:blur(.18px);
@@ -370,6 +375,7 @@
                     <span id="volume-value">--%</span>
                   </span>
                   <span class="chip source-chip" id="source-chip" title="点击切换歌词源">歌词源</span>
+                  <span class="chip" id="supplement-chip" style="display:none" title="补充翻译设置"></span>
                 </div>
               </div>
             </div>
@@ -412,9 +418,99 @@
       candidates:[], candidateIndex:0, canPlay:false, canPause:false, canPrevious:false, canNext:false, canSeek:false
     };
     let manualLyricsScroll=false,lyricsTranslateY=0,manualReturnTimer=0;
+    let plainResumeStartedAt=0,plainResumeFrom=0;
     let lyricTouchActive=false,lyricTouchMoved=false,lyricTouchStartY=0,lyricTouchStartTranslate=0;
     let lyricTouchLastY=0,lyricTouchLastAt=0,lyricVelocity=0,lyricMomentumFrame=0;
     let progressSeeking=false,progressSeekTarget=0;
+    let supplementEpoch=0;
+    let currentHasOfficialTranslation=false;
+    let candidateSignature='';
+    let sourceSwitchUnlockAt=0;
+    let lyricsRelayoutEpoch=0;
+    let lyricsTrackingSuspended=false;
+    let supplementRequestTimer=0;
+    let supplementInFlight=false;
+    let supplementWindowEnd=-1;
+    let supplementPrefetchRemaining=4;
+    const LYRICS_CACHE_SCHEMA=2;
+    const supplementChip=$('supplement-chip');
+
+    function requestSupplement(reset=true) {
+      clearTimeout(supplementRequestTimer);
+      supplementRequestTimer=0;
+      if(reset){
+        supplementWindowEnd=-1;
+        supplementInFlight=false;
+        supplementChip.style.display='none';
+        ++supplementEpoch;
+        if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.cancelSupplement)window.LobstaNativeLyrics.cancelSupplement();
+      }
+      if(translationMode==='original'||currentHasOfficialTranslation||!playback.lyrics.length)return;
+      supplementRequestTimer=setTimeout(startSupplementWindow,reset?520:80);
+    }
+
+    function startSupplementWindow() {
+      supplementRequestTimer=0;
+      if(supplementInFlight||translationMode==='original'||currentHasOfficialTranslation||!playback.lyrics.length)return;
+      const active=plainPlaybackIndex();
+      let strategy={behind:2,ahead:12,prefetch:4};
+      if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.supplementStrategy){
+        try{strategy={...strategy,...JSON.parse(window.LobstaNativeLyrics.supplementStrategy())};}catch(_){}
+      }
+      const behind=Math.max(0,Math.min(8,Number(strategy.behind)||2));
+      const ahead=Math.max(6,Math.min(48,Number(strategy.ahead)||12));
+      supplementPrefetchRemaining=Math.max(2,Math.min(16,Number(strategy.prefetch)||4));
+      const from=Math.max(0,active-behind);
+      const to=Math.min(playback.lyrics.length,active+ahead+1);
+      supplementWindowEnd=Math.max(active,to-1);
+      const missing=[];
+      for(let id=from;id<to;id++){
+        const line=playback.lyrics[id];
+        if(line&&!line.translation&&!line.supplement&&line.text.trim())missing.push({id,text:line.text});
+      }
+      const translated=playback.lyrics.find(line=>line.supplement);
+      if(translated){supplementChip.textContent=translated.supplement;supplementChip.style.display='inline-flex';}
+      updateInfoMarquee();
+      if(!missing.length)return;
+      const epoch=++supplementEpoch;
+      if(missing.length&&window.LobstaNativeLyrics&&window.LobstaNativeLyrics.translateMissing){
+        supplementInFlight=true;
+        window.LobstaNativeLyrics.translateMissing(epoch,JSON.stringify(missing));
+      }
+    }
+
+    function maybePrefetchSupplement() {
+      if(supplementInFlight||supplementRequestTimer||translationMode==='original'||currentHasOfficialTranslation)return;
+      if(supplementWindowEnd<0||plainPlaybackIndex()>=supplementWindowEnd-supplementPrefetchRemaining)requestSupplement(false);
+    }
+
+    function receiveSupplement(epoch,data) {
+      if(epoch!==supplementEpoch||currentHasOfficialTranslation||!data)return;
+      if(data.status){
+        const any=playback.lyrics.find(line=>line.supplement);
+        const failed=data.status==='error';
+        if(data.status==='done'||failed) supplementInFlight=false;
+        supplementChip.style.display=any||failed?'inline-flex':'none';
+        supplementChip.textContent=failed?'翻译失败':any?any.supplement:'';
+        supplementChip.title=data.message||'补充翻译设置';
+        updateInfoMarquee();
+        if(data.status==='done')maybePrefetchSupplement();
+        return;
+      }
+      const line=playback.lyrics[data.id];
+      if(!line||line.translation||!data.text)return;
+      line.translation=data.text;
+      line.supplement=data.source;
+      supplementChip.textContent=data.source;
+      supplementChip.style.display='inline-flex';
+      supplementChip.title=data.source==='AI 译'?'由自定义 API 补充':'由离线语言包补充';
+      const node=ui.lyrics.children[data.id];
+      if(node)node.innerHTML=lineHtml(line);
+      if(!lyricsTrackingSuspended){
+        updateActiveLine(lyricPosition(),true);
+        updateWordProgress(lyricPosition());
+      }
+    }
 
     const escapeHtml = value => String(value || '').replace(/[&<>"']/g, ch => ({
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -520,19 +616,34 @@
     }
 
     function renderLyrics(lines, message) {
+      const relayoutEpoch=++lyricsRelayoutEpoch;
+      lyricsTrackingSuspended=true;
       resetManualLyricsScroll();
+      ui.lyrics.classList.add('manual-dragging');
       playback.lyrics = lines || [];
       playback.active = -1;
       if (!playback.lyrics.length) {
+        ui.lyrics.classList.remove('plain-mode','plain-scrolling');
         ui.lyrics.innerHTML = '<div class="line empty">' + escapeHtml(message || '暂无歌词') + '</div>';
         ui.lyrics.style.transform = 'translateY(0)';
         setCompactLyric(message || '暂无歌词', false);
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+          if(relayoutEpoch!==lyricsRelayoutEpoch)return;
+          lyricsTrackingSuspended=false;
+          ui.lyrics.classList.remove('manual-dragging');
+        }));
         return;
       }
       ui.lyrics.innerHTML = playback.lyrics.map((line,index) =>
         '<div class="line" data-i="' + index + '">' + lineHtml(line) + '</div>'
       ).join('');
-      updateActiveLine(lyricPosition(), true);
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        if(relayoutEpoch!==lyricsRelayoutEpoch)return;
+        updateActiveLine(lyricPosition(),true);
+        updateWordProgress(lyricPosition());
+        lyricsTrackingSuspended=false;
+        if(!manualLyricsScroll)ui.lyrics.classList.remove('manual-dragging');
+      }));
     }
 
     let compactLineKey = '';
@@ -682,25 +793,107 @@
       manualLyricsScroll=false;
       lyricTouchActive=false;
       lyricTouchMoved=false;
+      plainResumeStartedAt=0;
       ui.lyrics.classList.remove('manual-dragging');
+      ui.lyrics.classList.remove('plain-scrolling');
     }
 
     function lyricsDragBounds() {
       const nodes=ui.lyrics.children;
       const first=nodes[0],last=nodes[nodes.length-1];
       if(!first||!last)return {min:0,max:0};
-      const center=ui.viewport.clientHeight*.48;
+      const center=lyricFocusY();
       const firstTarget=center-first.offsetTop-first.offsetHeight*.5;
       const lastTarget=center-last.offsetTop-last.offsetHeight*.5;
       return {min:Math.min(firstTarget,lastTarget),max:Math.max(firstTarget,lastTarget)};
     }
 
+    function isPlainLyrics() {
+      return !!(playback.lyrics.length&&playback.lyrics[0].plain);
+    }
+
+    function plainPlaybackProgress() {
+      if(!isPlainLyrics()||playback.durationMs<=0)return 0;
+      return Math.max(0,Math.min(1,(currentPosition()/playback.durationMs-.025)/.95));
+    }
+
+    function plainPlaybackIndex() {
+      if(!isPlainLyrics())return Math.max(0,playback.active);
+      return Math.max(0,Math.min(playback.lyrics.length-1,
+        Math.floor(plainPlaybackProgress()*playback.lyrics.length)));
+    }
+
+    function plainScrollTarget() {
+      const bounds=lyricsDragBounds();
+      return bounds.max+(bounds.min-bounds.max)*plainPlaybackProgress();
+    }
+
+    function updatePlainLyricsScroll(immediate=false) {
+      if(!isPlainLyrics()||manualLyricsScroll)return;
+      let target=plainScrollTarget();
+      if(plainResumeStartedAt&&!immediate){
+        const progress=Math.min(1,(performance.now()-plainResumeStartedAt)/1100);
+        const eased=1-Math.pow(1-progress,3);
+        target=plainResumeFrom+(target-plainResumeFrom)*eased;
+        if(progress>=1)plainResumeStartedAt=0;
+      }
+      ui.lyrics.classList.add('plain-scrolling');
+      setLyricsTranslate(target);
+      const progress=plainPlaybackProgress();
+      const scaled=progress*playback.lyrics.length;
+      const index=Math.max(0,Math.min(playback.lyrics.length-1,Math.floor(scaled)));
+      const line=playback.lyrics[index];
+      const rate=playback.state==='playing'&&playback.speed>0?playback.speed:1;
+      const lineBudget=playback.durationMs>0
+        ? Math.max(.1,(1-(scaled-index))*playback.durationMs/playback.lyrics.length/1000/rate)
+        : 0;
+      const hasTranslation=translationMode==='bilingual'&&!!line.translation;
+      setCompactLyric(
+        linePrimaryText(line),
+        document.body.classList.contains('compact'),
+        hasTranslation?line.translation:(playback.lyrics[index+1]?linePrimaryText(playback.lyrics[index+1]):''),
+        lineBudget,
+        null,
+        hasTranslation
+      );
+      maybePrefetchSupplement();
+    }
+
+    function resumePlainLyrics(animate=true) {
+      clearTimeout(manualReturnTimer);
+      if(lyricMomentumFrame)cancelAnimationFrame(lyricMomentumFrame);
+      manualReturnTimer=0;
+      lyricMomentumFrame=0;
+      lyricVelocity=0;
+      lyricTouchActive=false;
+      lyricTouchMoved=false;
+      manualLyricsScroll=false;
+      ui.lyrics.classList.remove('manual-dragging');
+      plainResumeFrom=lyricsTranslateY;
+      plainResumeStartedAt=animate?performance.now():0;
+      updatePlainLyricsScroll(!animate);
+    }
+
     function resumeRealtimeLyrics(animate=true) {
+      if(isPlainLyrics()){
+        resumePlainLyrics(animate);
+        return;
+      }
       resetManualLyricsScroll();
       if(!animate)ui.lyrics.classList.add('manual-dragging');
       updateActiveLine(lyricPosition(),true);
       updateWordProgress(lyricPosition());
       if(!animate)requestAnimationFrame(()=>ui.lyrics.classList.remove('manual-dragging'));
+    }
+
+    function lyricFocusY() {
+      const height=ui.viewport.clientHeight;
+      if(document.body.classList.contains('horizontal-layout'))return height*.48;
+      const active=ui.lyrics.children[playback.active];
+      const lineHeight=active?active.offsetHeight:54*lyricFontScale;
+      const roomy=Math.max(0,Math.min(1,(height-lineHeight*2)/(lineHeight*4)));
+      const focus=height*(.455-.17*roomy);
+      return Math.min(height*.5,Math.max(focus,lineHeight*.5+8));
     }
 
     function scheduleRealtimeLyricsReturn() {
@@ -751,6 +944,7 @@
       playback.receivedAt=performance.now();
       playback.active=-1;
       resumeRealtimeLyrics(false);
+      requestSupplement();
       return true;
     }
 
@@ -856,6 +1050,7 @@
       }
       if (!force && index === playback.active) return;
       playback.active = index;
+      maybePrefetchSupplement();
       const nodes = ui.lyrics.children;
       for (let i = 0; i < nodes.length; i++) {
         nodes[i].classList.toggle('active', i === index);
@@ -864,8 +1059,13 @@
       }
       const active = nodes[index];
       if (active) {
-        const target = ui.viewport.clientHeight * .48 - active.offsetTop - active.offsetHeight * .5;
-        if(!manualLyricsScroll)setLyricsTranslate(target);
+        if(lines[index].plain){
+          updatePlainLyricsScroll(force);
+        }else{
+          ui.lyrics.classList.remove('plain-scrolling');
+          const target = lyricFocusY() - active.offsetTop - active.offsetHeight * .5;
+          if(!manualLyricsScroll)setLyricsTranslate(target);
+        }
         const playbackRate = playback.state === 'playing' && playback.speed > 0 ? playback.speed : 1;
         const lineEnd = lines[index + 1]
           ? lines[index + 1].t
@@ -978,6 +1178,7 @@
         const raw = localStorage.getItem('lobsta-lyrics:' + hash(key));
         if (!raw) return null;
         const value = JSON.parse(raw);
+        if (value.schema !== LYRICS_CACHE_SCHEMA) return null;
         if (Date.now() - value.savedAt > 14 * 86400000) return null;
         return value;
       } catch (_) { return null; }
@@ -986,7 +1187,10 @@
     function saveLyrics(key, value) {
       try {
         localStorage.setItem('lobsta-lyrics:' + hash(key), JSON.stringify({
-          lyrics:value.lyrics || '', translatedLyrics:value.translatedLyrics || '', wordLyrics:value.wordLyrics || '',
+          schema:LYRICS_CACHE_SCHEMA,
+          lyrics:isUsableLyricPayload(value.lyrics)?value.lyrics:'',
+          translatedLyrics:isUsableLyricPayload(value.translatedLyrics)?value.translatedLyrics:'',
+          wordLyrics:isUsableLyricPayload(value.wordLyrics)?value.wordLyrics:'',
           duration:Number(value.duration || 0), cover:value.cover || '', source:value.source || '',
           alternatives:Array.isArray(value.alternatives)?value.alternatives.slice(0,3):[],
           lossless:!!value.lossless, hiResLossless:!!value.hiResLossless,
@@ -1001,15 +1205,29 @@
       return (h >>> 0).toString(36);
     }
 
+    function isUsableLyricPayload(value) {
+      if(typeof value!=='string')return false;
+      const normalized=value.trim().toLowerCase();
+      return !!normalized&&normalized!=='null'&&normalized!=='undefined';
+    }
+
+    function lyricsCandidateSignature(candidates) {
+      return candidates.map(candidate=>[
+        candidate.source||'',candidate.lyrics||'',candidate.translatedLyrics||'',candidate.wordLyrics||''
+      ].join('\u0000')).join('\u0001');
+    }
+
     async function fetchFallback(track, artist, signal) {
       const url = 'https://lrclib.net/api/search?track_name=' + encodeURIComponent(track) + '&artist_name=' + encodeURIComponent(artist);
       const response = await fetch(url, { signal, headers:{'Accept':'application/json'} });
       if (!response.ok) throw new Error('LRCLIB ' + response.status);
       const list = await response.json();
       if (!Array.isArray(list) || !list.length) return {};
-      const match = list.find(item => item.syncedLyrics) || list[0];
+      const match = list.find(item => isUsableLyricPayload(item.syncedLyrics)) ||
+        list.find(item => isUsableLyricPayload(item.plainLyrics));
+      if(!match)return {};
       return {
-        lyrics:match.syncedLyrics || match.plainLyrics || '',
+        lyrics:isUsableLyricPayload(match.syncedLyrics)?match.syncedLyrics:match.plainLyrics,
         duration:Number(match.duration || 0) * 1000,
         source:'LRCLIB'
       };
@@ -1024,7 +1242,14 @@
 
       if (window.LobstaNativeLyrics && window.LobstaNativeLyrics.requestLyrics) {
         try {
-          window.LobstaNativeLyrics.requestLyrics(track, artist, requestId, !playback.coverIsNative);
+          window.LobstaNativeLyrics.requestLyrics(
+            track,
+            artist,
+            playback.album||'',
+            playback.durationMs||0,
+            requestId,
+            !playback.coverIsNative
+          );
           return;
         } catch (_) {}
       }
@@ -1032,7 +1257,7 @@
       try {
         const data = await fetchFallback(track,artist,controller.signal);
         if (key !== playback.key || requestId !== playback.requestId) return;
-        if (data.lyrics) {
+        if (isUsableLyricPayload(data.lyrics)) {
           saveLyrics(key,data);
           applyResolved(data,key,requestId);
         } else if (!cached) renderLyrics([], '暂未匹配到歌词');
@@ -1044,7 +1269,7 @@
 
     function receiveLyrics(requestId, data) {
       if (requestId !== playback.requestId || !playback.key) return;
-      if (data && data.lyrics) {
+      if (data && isUsableLyricPayload(data.lyrics)) {
         saveLyrics(playback.key, data);
         applyResolved(data, playback.key, requestId);
       } else if (!cachedLyrics(playback.key)) {
@@ -1065,7 +1290,11 @@
     function applyResolved(data, key, requestId) {
       if (key !== playback.key || requestId !== playback.requestId) return;
       const supplied=Array.isArray(data.alternatives)&&data.alternatives.length?data.alternatives:[data];
-      playback.candidates=supplied.filter(candidate=>candidate&&candidate.lyrics);
+      const candidates=supplied.filter(candidate=>candidate&&isUsableLyricPayload(candidate.lyrics));
+      const signature=lyricsCandidateSignature(candidates);
+      if(signature&&signature===candidateSignature&&playback.candidates.length)return;
+      candidateSignature=signature;
+      playback.candidates=candidates;
       playback.candidateIndex=0;
       applyCandidate(0);
     }
@@ -1075,26 +1304,45 @@
       const normalized=((Number(index)||0)%playback.candidates.length+playback.candidates.length)%playback.candidates.length;
       playback.candidateIndex=normalized;
       const data=playback.candidates[normalized];
+      if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.lyricSourceOffset){
+        try{
+          const remembered=Number(window.LobstaNativeLyrics.lyricSourceOffset(
+            playback.key,data.source||'歌词源',playback.track||'',playback.artist||''));
+          if(Number.isFinite(remembered))playback.lyricOffsetMs=Math.max(-5000,Math.min(5000,remembered));
+        }catch(_){}
+      }
       const wordTimed=parseWordLyrics(data.wordLyrics);
       const lineTimed=parseLrc(data.lyrics);
+      const officialTranslations=parseLrc(data.translatedLyrics);
+      currentHasOfficialTranslation=officialTranslations.length>0;
+      const plainMode=!wordTimed.length&&!lineTimed.length;
       const base=wordTimed.length?wordTimed:(lineTimed.length?lineTimed:plainLyrics(data.lyrics));
+      ui.lyrics.classList.toggle('plain-mode',plainMode);
       renderLyrics(attachTranslations(base,data.translatedLyrics),data.lyrics?'':'暂未匹配到歌词');
       if((!playback.durationMs||playback.durationMs<1000)&&Number(data.duration)>0)playback.durationMs=Number(data.duration);
       if(data.cover)setCover(data.cover,false);
-      const capabilities=(wordTimed.length?' · 逐字':'')+(data.translatedLyrics?' · 译':'');
+      const capabilities=(wordTimed.length?' · 逐字':'')+(plainMode?' · 无时间轴':'')+(currentHasOfficialTranslation?' · 译':'');
       ui.source.textContent=(data.source||'歌词源')+capabilities+(playback.candidates.length>1?' ▾':'');
       ui.source.title=playback.candidates.length>1?'点击切换歌词源':'当前歌词源';
       updateInfoMarquee(true);
+      requestSupplement();
     }
 
     function cycleLyricsSource() {
       if(playback.candidates.length<2)return;
+      const now=performance.now();
+      if(now<sourceSwitchUnlockAt)return;
+      sourceSwitchUnlockAt=now+180;
       applyCandidate(playback.candidateIndex+1);
     }
 
     ui.chipsTrack.addEventListener('click', event => {
       if (event.target.closest('.source-chip')) cycleLyricsSource();
+      if (event.target.closest('[data-supplement]')||event.target.id==='supplement-chip') {
+        if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.supplementSettings)window.LobstaNativeLyrics.supplementSettings();
+      }
     });
+    supplementChip.dataset.supplement='1';
 
     function sendMediaCommand(command) {
       if (!window.LobstaNativeLyrics || !window.LobstaNativeLyrics.mediaCommand) return;
@@ -1121,7 +1369,7 @@
     function updateInfoMarquee(force=false) {
       const viewport=ui.chipsViewport,track=ui.chipsTrack,primary=ui.chipsPrimary;
       if(!viewport||!track||!primary)return;
-      const signature=[ui.volume.title,ui.source.textContent,ui.source.title].join('\u0000');
+      const signature=[ui.volume.title,ui.source.textContent,ui.source.title,supplementChip.textContent,supplementChip.style.display].join('\u0000');
       const viewportWidth=viewport.clientWidth;
       if(!force&&signature===infoMarqueeSignature&&viewportWidth===infoMarqueeWidth)return;
       infoMarqueeSignature=signature;
@@ -1333,10 +1581,15 @@
       updateInfoMarquee();
 
       if (changed) {
+        supplementEpoch++;
+        if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.cancelSupplement)window.LobstaNativeLyrics.cancelSupplement();
+        supplementChip.style.display='none';
         playback.key = key;
         playback.requestId++;
         playback.candidates = [];
         playback.candidateIndex = 0;
+        candidateSignature = '';
+        currentHasOfficialTranslation = false;
         playback.cover = '';
         playback.coverIsNative = false;
         ui.source.textContent = '正在搜索';
@@ -1351,8 +1604,10 @@
       } else if (data.cover && (!playback.cover || !playback.coverIsNative)) {
         setCover(data.cover, true);
       }
-      updateActiveLine(lyricPosition(), false);
-      updateWordProgress(lyricPosition());
+      if(!lyricsTrackingSuspended){
+        updateActiveLine(lyricPosition(), false);
+        updateWordProgress(lyricPosition());
+      }
     }
 
     function frame() {
@@ -1362,8 +1617,11 @@
       ui.duration.textContent = formatTime(duration);
       if(!progressSeeking)ui.progress.style.width = (duration > 0 ? Math.min(100,position/duration*100) : 0) + '%';
       const lyricPos=lyricPosition();
-      if (playback.state === 'playing') updateActiveLine(lyricPos, false);
-      updateWordProgress(lyricPos);
+      if(!lyricsTrackingSuspended){
+        if(isPlainLyrics())updatePlainLyricsScroll(false);
+        else if (playback.state === 'playing') updateActiveLine(lyricPos, false);
+        updateWordProgress(lyricPos);
+      }
       requestAnimationFrame(frame);
     }
 
@@ -1443,6 +1701,10 @@
     });
 
     window.LobstaOverlay = {
+      receiveSupplement,
+      refreshSupplement() {
+        if(playback.candidates.length)applyCandidate(playback.candidateIndex);
+      },
       updatePlayback,
       receiveLyrics,
       receiveRemoteCover,

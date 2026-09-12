@@ -60,6 +60,12 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        findViewById<Button>(R.id.btn_supplement_translation).setOnClickListener {
+            startActivity(Intent(this, TranslationSettingsActivity::class.java))
+        }
+        findViewById<Button>(R.id.btn_manage_lyric_offsets).setOnClickListener {
+            startActivity(Intent(this, LyricOffsetMemoryActivity::class.java))
+        }
 
         btnOverlay = findViewById(R.id.btn_overlay)
         btnOverlayPermission = findViewById(R.id.btn_overlay_permission)
@@ -160,7 +166,6 @@ class MainActivity : AppCompatActivity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
         })
-        lyricOffsetValue.setOnClickListener { setLyricOffset(0) }
 
         translationOriginal.setOnClickListener {
             setTranslationMode(LyricsOverlayService.TRANSLATION_ORIGINAL)
@@ -342,7 +347,8 @@ class MainActivity : AppCompatActivity() {
             LyricsOverlayService.LYRIC_OFFSET_MAX_MS
         )
         overlayPrefs.edit().putInt(LyricsOverlayService.PREF_LYRIC_OFFSET_MS, normalized).apply()
-        updateLyricOffsetUi()
+        lyricOffsetValue.text = formatOffset(normalized)
+        seekLyricOffset.progress = (normalized - LyricsOverlayService.LYRIC_OFFSET_MIN_MS) / 100
         if (LyricsOverlayService.isRunning) {
             startService(Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_SET_LYRIC_OFFSET
@@ -352,7 +358,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateLyricOffsetUi() {
-        val value = overlayPrefs.getInt(LyricsOverlayService.PREF_LYRIC_OFFSET_MS, 0)
+        val value = (LyricsOverlayService.instance?.currentLyricOffsetMs()
+            ?: overlayPrefs.getInt(LyricsOverlayService.PREF_LYRIC_OFFSET_MS, 0))
             .coerceIn(LyricsOverlayService.LYRIC_OFFSET_MIN_MS, LyricsOverlayService.LYRIC_OFFSET_MAX_MS)
         lyricOffsetValue.text = formatOffset(value)
         seekLyricOffset.progress = (value - LyricsOverlayService.LYRIC_OFFSET_MIN_MS) / 100

@@ -53,6 +53,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.security.MessageDigest
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
@@ -85,12 +86,19 @@ class LyricsOverlayService : Service() {
     private var webView: WebView? = null
     private var windowParams: WindowManager.LayoutParams? = null
     private var webReady = false
+    private var fullscreenHost: FrameLayout? = null
+    private var overlayWebHost: ViewGroup? = null
+    private var singleTap: Runnable? = null
     private var compact = false
     private var overlayRotated = false
     private var backgroundMode = BACKGROUND_DEFAULT
     private var fontScalePercent = FONT_SCALE_DEFAULT_PERCENT
     private var lyricColor = LYRIC_COLOR_DEFAULT
     private var lyricOffsetMs = 0
+    private var currentLyricIdentity = ""
+    private var currentLyricSource = ""
+    private var currentLyricTitle = ""
+    private var currentLyricArtist = ""
     private var translationMode = TRANSLATION_BILINGUAL
     private var monitorStarted = false
     private var lastDisplayWidth = 0
@@ -102,6 +110,9 @@ class LyricsOverlayService : Service() {
     private var snapshotScheduled = false
     private var closeBlockedUntilElapsedMs = 0L
     @Volatile private var latestLyricsRequestId = 0
+    private var supplementJob: kotlinx.coroutines.Job? = null
+    private var supplementGeneration = 0
+    private val supplements by lazy { SupplementTranslation(this) }
 
     private val dispatchRunnable = Runnable {
         snapshotScheduled = false
@@ -136,6 +147,7 @@ class LyricsOverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         isRunning = true
         announceOverlayState()
         backgroundMode = normalizedBackgroundMode(
@@ -189,8 +201,42 @@ class LyricsOverlayService : Service() {
         if (intent?.action == ACTION_SET_LYRIC_OFFSET) {
             lyricOffsetMs = intent.getIntExtra(EXTRA_LYRIC_OFFSET_MS, 0)
                 .coerceIn(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
-            prefs.edit().putInt(PREF_LYRIC_OFFSET_MS, lyricOffsetMs).apply()
+            val editor = prefs.edit().putInt(PREF_LYRIC_OFFSET_MS, lyricOffsetMs)
+            activeLyricOffsetPreferenceKey()?.let { key ->
+                if (lyricOffsetMs == 0) editor.remove(key) else editor.putInt(key, lyricOffsetMs)
+                updateLyricOffsetIndex(
+                    editor, key, currentLyricIdentity, currentLyricSource,
+                    currentLyricTitle, currentLyricArtist, lyricOffsetMs
+                )
+            }
+            editor.apply()
             applyLyricOffset()
+            if (overlayRoot != null) return START_STICKY
+        }
+
+        if (intent?.action == ACTION_DELETE_LYRIC_OFFSET_MEMORY) {
+            val key = intent.getStringExtra(EXTRA_LYRIC_OFFSET_MEMORY_KEY).orEmpty()
+            if (key.startsWith(PREF_LYRIC_OFFSET_ENTRY_PREFIX)) {
+                val editor = prefs.edit().remove(key)
+                updateLyricOffsetIndex(editor, key, "", "", "", "", 0)
+                if (activeLyricOffsetPreferenceKey() == key) {
+                    lyricOffsetMs = 0
+                    editor.putInt(PREF_LYRIC_OFFSET_MS, 0)
+                    applyLyricOffset()
+                }
+                editor.apply()
+                announceOverlayState()
+            }
+            if (overlayRoot != null) return START_STICKY
+        }
+
+        if (intent?.action == ACTION_CLEAR_LYRIC_OFFSET_MEMORIES) {
+            val editor = prefs.edit()
+            prefs.all.keys.filter { it.startsWith(PREF_LYRIC_OFFSET_ENTRY_PREFIX) }.forEach(editor::remove)
+            lyricOffsetMs = 0
+            editor.putInt(PREF_LYRIC_OFFSET_MS, 0).remove(PREF_LYRIC_OFFSET_INDEX).apply()
+            applyLyricOffset()
+            announceOverlayState()
             if (overlayRoot != null) return START_STICKY
         }
 
@@ -215,6 +261,7 @@ class LyricsOverlayService : Service() {
     }
 
     override fun onDestroy() {
+        instance = null
         mainHandler.removeCallbacksAndMessages(null)
         lyricsScope.cancel()
         lyricsRepository.close()
@@ -253,7 +300,105 @@ class LyricsOverlayService : Service() {
         )
     }
 
+    fun refreshSupplementTranslation() {
+        mainHandler.post {
+            webView?.evaluateJavascript("window.LobstaOverlay.refreshSupplement();", null)
+        }
+    }
+
     private inner class LyricsJavascriptBridge {
+        @JavascriptInterface
+        fun lyricSourceOffset(identity: String, source: String, title: String, artist: String): Int {
+            val safeIdentity = identity.trim().take(600)
+            val safeSource = source.trim().take(120)
+            val safeTitle = title.trim().take(300)
+            val safeArtist = artist.trim().take(300)
+            if (safeIdentity.isBlank() || safeSource.isBlank()) return 0
+            val preferenceKey = lyricOffsetPreferenceKey(safeIdentity, safeSource)
+            val remembered = prefs.getInt(preferenceKey, 0)
+                .coerceIn(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
+            mainHandler.post {
+                currentLyricIdentity = safeIdentity
+                currentLyricSource = safeSource
+                currentLyricTitle = safeTitle
+                currentLyricArtist = safeArtist
+                lyricOffsetMs = remembered
+                prefs.edit().putInt(PREF_LYRIC_OFFSET_MS, remembered).apply()
+                announceOverlayState()
+            }
+            return remembered
+        }
+
+        @JavascriptInterface
+        fun supplementSettings() {
+            mainHandler.post { startActivity(Intent(this@LyricsOverlayService, TranslationSettingsActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+
+        @JavascriptInterface
+        fun supplementStrategy(): String {
+            val translationPrefs = getSharedPreferences("supplement_translation", Context.MODE_PRIVATE)
+            val profile = TranslationApiProfiles.find(
+                this@LyricsOverlayService,
+                translationPrefs.getString("active_api_profile", null)
+            )
+            val endpoint = translationPrefs.getString(
+                TranslationApiProfiles.endpointKey(profile.id), profile.defaultEndpoint
+            ).orEmpty().lowercase()
+            val model = translationPrefs.getString(
+                TranslationApiProfiles.modelKey(profile.id), profile.defaultModel
+            ).orEmpty().lowercase()
+            val provider = when {
+                profile.id == "gemini" || "generativelanguage.googleapis.com" in endpoint || "gemini" in model -> "gemini"
+                profile.id == "glm" || "bigmodel.cn" in endpoint || model.startsWith("glm-") -> "glm"
+                profile.id == "deepseek" || "deepseek.com" in endpoint || model.startsWith("deepseek-") -> "deepseek"
+                else -> "default"
+            }
+            return when (provider) {
+                "gemini" -> JSONObject().put("behind", 2).put("ahead", 34).put("prefetch", 10).toString()
+                "glm" -> JSONObject().put("behind", 2).put("ahead", 22).put("prefetch", 7).toString()
+                else -> JSONObject().put("behind", 2).put("ahead", 12).put("prefetch", 4).toString()
+            }
+        }
+
+        @JavascriptInterface
+        fun cancelSupplement() {
+            mainHandler.post { supplementGeneration++; supplementJob?.cancel() }
+        }
+
+        @JavascriptInterface
+        fun translateMissing(requestId: Int, payload: String) {
+            if (payload.length > 250000) return
+            mainHandler.post {
+                supplementJob?.cancel()
+                val generation = ++supplementGeneration
+                fun report(data: JSONObject) {
+                    mainHandler.post {
+                        if (generation == supplementGeneration && webReady) webView?.evaluateJavascript(
+                            "window.LobstaOverlay.receiveSupplement($requestId,$data);", null)
+                    }
+                }
+                supplementJob = lyricsScope.launch {
+                    try {
+                        val mode = getSharedPreferences("supplement_translation", Context.MODE_PRIVATE).getString("mode", "off")
+                        if (mode == "off") { report(JSONObject().put("status", "off")); return@launch }
+                        report(JSONObject().put("status", "working"))
+                        supplements.translate(payload) { report(it) }
+                        report(JSONObject().put("status", "done"))
+                    } catch (cancel: kotlinx.coroutines.CancellationException) {
+                        throw cancel
+                    } catch (error: Exception) {
+                        val message = when (error) {
+                            is IllegalArgumentException -> error.message.orEmpty().take(180)
+                            is java.net.SocketTimeoutException -> "翻译服务连接超时，请检查手机网络或 API 服务"
+                            is java.io.IOException -> "翻译服务网络连接失败：${error.message.orEmpty().take(120)}"
+                            else -> "补充翻译暂不可用：${error.message.orEmpty().take(120)}"
+                        }
+                        report(JSONObject().put("status", "error").put("message", message))
+                    }
+                }
+            }
+        }
         @JavascriptInterface
         fun mediaCommand(command: String) {
             mainHandler.post {
@@ -294,7 +439,14 @@ class LyricsOverlayService : Service() {
         }
 
         @JavascriptInterface
-        fun requestLyrics(track: String, artist: String, requestId: Int, needsRemoteCover: Boolean) {
+        fun requestLyrics(
+            track: String,
+            artist: String,
+            album: String,
+            durationMs: Double,
+            requestId: Int,
+            needsRemoteCover: Boolean
+        ) {
             if (track.isBlank() || requestId <= 0) return
             latestLyricsRequestId = requestId
             lyricsScope.launch {
@@ -302,7 +454,12 @@ class LyricsOverlayService : Service() {
                 val coverLookup = if (needsRemoteCover) {
                     async { lyricsRepository.resolveCover(track, artist) }
                 } else null
-                val result = lyricsRepository.resolveLyrics(track, artist)
+                val result = lyricsRepository.resolveLyrics(
+                    track,
+                    artist,
+                    album,
+                    durationMs.takeIf { it.isFinite() && it > 0 }?.toLong() ?: 0L
+                )
                 if (requestId != latestLyricsRequestId) {
                     coverLookup?.cancel()
                     return@launch
@@ -461,6 +618,12 @@ class LyricsOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                setFitInsetsTypes(0)
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
             x = prefs.getInt(
                 "x",
                 max(safeBounds.left, safeBounds.right - activeWindowSize.first - dp(12))
@@ -485,6 +648,22 @@ class LyricsOverlayService : Service() {
             setBackgroundColor(Color.TRANSPARENT)
         }
         overlayRoot = root
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            mainHandler.post {
+                if (fullscreenHost == null) {
+                    val safe = currentSafeDisplayBounds()
+                    windowParams?.let { lp ->
+                        val x = lp.x.coerceIn(safe.left, max(safe.left, safe.right - lp.width))
+                        val y = lp.y.coerceIn(safe.top, max(safe.top, safe.bottom - lp.height))
+                        if (x != lp.x || y != lp.y) {
+                            lp.x = x; lp.y = y
+                            overlayRoot?.let { windowManager.updateViewLayout(it, lp) }
+                        }
+                    }
+                }
+            }
+            insets
+        }
 
         val content = FrameLayout(this).apply {
             clipToOutline = true
@@ -520,7 +699,16 @@ class LyricsOverlayService : Service() {
         closeButton = closeControl
 
         val resizeButton = chromeButton("") {
-            toggleCompact()
+            val pending = singleTap
+            if (pending != null) {
+                mainHandler.removeCallbacks(pending)
+                singleTap = null
+                startActivity(Intent(this, FullscreenLyricsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } else {
+                singleTap = Runnable { singleTap = null; toggleCompact() }.also {
+                    mainHandler.postDelayed(it, ViewConfiguration.getDoubleTapTimeout().toLong())
+                }
+            }
         }.apply {
             contentDescription = "切换收起或展开，长按拖动可调整大小"
             setChromeIcon(this, R.drawable.ic_overlay_resize_up_left)
@@ -618,6 +806,8 @@ class LyricsOverlayService : Service() {
                         resizing = false
                         movedBeforeLongPress = false
                         pendingLongPress = Runnable {
+                            singleTap?.let(mainHandler::removeCallbacks)
+                            singleTap = null
                             resizing = true
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                         }.also {
@@ -755,6 +945,42 @@ class LyricsOverlayService : Service() {
         windowManager.addView(root, params)
     }
 
+    fun attachFullscreen(host: FrameLayout): Boolean {
+        if (!webReady) return false
+        val player = webView ?: return false
+        if (fullscreenHost != null) return false
+        overlayWebHost = player.parent as? ViewGroup
+        overlayWebHost?.removeView(player)
+        fullscreenHost = host
+        overlayRoot?.visibility = View.GONE
+        host.addView(player, FrameLayout.LayoutParams(-1, -1))
+        player.evaluateJavascript("window.LobstaOverlay.setCompact(false);", null)
+        updateFullscreenLayout()
+        return true
+    }
+
+    fun updateFullscreenLayout() {
+        val host = fullscreenHost ?: return
+        host.post {
+            webView?.evaluateJavascript("window.LobstaOverlay.setHorizontalLayout(${host.width > host.height});", null)
+        }
+    }
+
+    fun detachFullscreen(host: FrameLayout) {
+        if (fullscreenHost !== host) return
+        webView?.let { player ->
+            host.removeView(player)
+            overlayWebHost?.addView(player, FrameLayout.LayoutParams(-1, -1))
+            player.evaluateJavascript("window.LobstaOverlay.setCompact($compact);", null)
+        }
+        fullscreenHost = null
+        overlayWebHost = null
+        applyHorizontalWebLayout()
+        overlayRoot?.visibility = View.VISIBLE
+        val size = currentDisplaySize()
+        if (size.first != lastDisplayWidth || size.second != lastDisplayHeight) adaptOverlayToDisplay()
+    }
+
     private fun currentDisplaySize(): Pair<Int, Int> {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val bounds = windowManager.currentWindowMetrics.bounds
@@ -772,8 +998,8 @@ class LyricsOverlayService : Service() {
             return Rect(0, 0, screenWidth, screenHeight)
         }
         val metrics = windowManager.currentWindowMetrics
-        val insetTypes = WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
-        val insets = metrics.windowInsets.getInsetsIgnoringVisibility(insetTypes)
+        val insets = (overlayRoot?.rootWindowInsets ?: metrics.windowInsets)
+            .getInsets(WindowInsets.Type.systemBars())
         val bounds = metrics.bounds
         val safe = Rect(
             bounds.left + insets.left,
@@ -879,6 +1105,7 @@ class LyricsOverlayService : Service() {
     }
 
     private fun adaptOverlayToDisplay() {
+        if (fullscreenHost != null) return
         val root = overlayRoot ?: return
         val lp = windowParams ?: return
         val (screenWidth, screenHeight) = currentDisplaySize()
@@ -918,6 +1145,7 @@ class LyricsOverlayService : Service() {
     }
 
     private fun applyHorizontalWebLayout() {
+        if (fullscreenHost != null) return
         webView?.evaluateJavascript(
             "window.LobstaOverlay && window.LobstaOverlay.setHorizontalLayout($overlayRotated);",
             null
@@ -1080,6 +1308,48 @@ class LyricsOverlayService : Service() {
             null
         )
     }
+
+    private fun lyricOffsetPreferenceKey(identity: String, source: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest("$identity\u0000$source".toByteArray(Charsets.UTF_8))
+            .take(12)
+            .joinToString("") { "%02x".format(it) }
+        return PREF_LYRIC_OFFSET_ENTRY_PREFIX + digest
+    }
+
+    private fun activeLyricOffsetPreferenceKey(): String? =
+        if (currentLyricIdentity.isBlank() || currentLyricSource.isBlank()) null
+        else lyricOffsetPreferenceKey(currentLyricIdentity, currentLyricSource)
+
+    private fun updateLyricOffsetIndex(
+        editor: android.content.SharedPreferences.Editor,
+        preferenceKey: String,
+        identity: String,
+        source: String,
+        title: String,
+        artist: String,
+        offsetMs: Int
+    ) {
+        val entryId = preferenceKey.removePrefix(PREF_LYRIC_OFFSET_ENTRY_PREFIX)
+        val index = runCatching {
+            JSONObject(prefs.getString(PREF_LYRIC_OFFSET_INDEX, "{}").orEmpty().ifBlank { "{}" })
+        }
+            .getOrDefault(JSONObject())
+        if (offsetMs == 0) {
+            index.remove(entryId)
+        } else {
+            index.put(entryId, JSONObject()
+                .put("identity", identity)
+                .put("source", source)
+                .put("title", title)
+                .put("artist", artist)
+                .put("offsetMs", offsetMs)
+                .put("updatedAt", System.currentTimeMillis()))
+        }
+        editor.putString(PREF_LYRIC_OFFSET_INDEX, index.toString())
+    }
+
+    fun currentLyricOffsetMs(): Int = lyricOffsetMs
 
     private fun applyTranslationMode() {
         val encoded = JSONObject.quote(translationMode)
@@ -1457,6 +1727,8 @@ class LyricsOverlayService : Service() {
         (value * resources.displayMetrics.density + 0.5f).toInt()
 
     companion object {
+        var instance: LyricsOverlayService? = null
+            private set
         const val ACTION_START = "com.tcrrry.desktoplyrics.action.START_LYRICS_OVERLAY"
         const val ACTION_STOP = "com.tcrrry.desktoplyrics.action.STOP_LYRICS_OVERLAY"
         const val ACTION_STATE_CHANGED = "com.tcrrry.desktoplyrics.action.LYRICS_OVERLAY_STATE_CHANGED"
@@ -1464,11 +1736,14 @@ class LyricsOverlayService : Service() {
         const val ACTION_SET_FONT_SCALE = "com.tcrrry.desktoplyrics.action.SET_LYRICS_FONT_SCALE"
         const val ACTION_SET_LYRIC_COLOR = "com.tcrrry.desktoplyrics.action.SET_LYRIC_COLOR"
         const val ACTION_SET_LYRIC_OFFSET = "com.tcrrry.desktoplyrics.action.SET_LYRIC_OFFSET"
+        const val ACTION_CLEAR_LYRIC_OFFSET_MEMORIES = "com.tcrrry.desktoplyrics.action.CLEAR_LYRIC_OFFSET_MEMORIES"
+        const val ACTION_DELETE_LYRIC_OFFSET_MEMORY = "com.tcrrry.desktoplyrics.action.DELETE_LYRIC_OFFSET_MEMORY"
         const val ACTION_SET_TRANSLATION_MODE = "com.tcrrry.desktoplyrics.action.SET_TRANSLATION_MODE"
         const val EXTRA_BACKGROUND_MODE = "background_mode"
         const val EXTRA_FONT_SCALE_PERCENT = "font_scale_percent"
         const val EXTRA_LYRIC_COLOR = "lyric_color"
         const val EXTRA_LYRIC_OFFSET_MS = "lyric_offset_ms"
+        const val EXTRA_LYRIC_OFFSET_MEMORY_KEY = "lyric_offset_memory_key"
         const val EXTRA_TRANSLATION_MODE = "translation_mode"
         const val EXTRA_RUNNING = "running"
         const val PREFS_NAME = "lyrics_overlay_prefs"
@@ -1476,6 +1751,8 @@ class LyricsOverlayService : Service() {
         const val PREF_FONT_SCALE_PERCENT = "font_scale_percent"
         const val PREF_LYRIC_COLOR = "lyric_color_v1"
         const val PREF_LYRIC_OFFSET_MS = "lyric_offset_ms_v1"
+        const val PREF_LYRIC_OFFSET_ENTRY_PREFIX = "lyric_offset_entry_v2:"
+        const val PREF_LYRIC_OFFSET_INDEX = "lyric_offset_index_v2"
         const val PREF_TRANSLATION_MODE = "translation_mode_v1"
         private const val PREF_COMPACT_WIDTH = "compact_width_v1"
         private const val PREF_OVERLAY_ROTATED = "overlay_rotated_v1"
