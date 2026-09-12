@@ -51,6 +51,7 @@ Android floating lyrics overlay with MediaSession playback detection, synchroniz
 ## 兼容性
 
 - Android 8.0（API 26）及以上
+- 64 位 ARM 设备（arm64-v8a）；覆盖绝大多数现代 Android 手机，不支持纯 32 位旧机与 x86 模拟器
 - 需要 Android System WebView
 - 播放器需要提供标准 Android MediaSession
 

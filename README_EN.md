@@ -49,6 +49,7 @@ Watch on Bilibili: [Desktop Lyrics for Android — Apple Music / Spotify real-ti
 ## Requirements and compatibility
 
 - Android 8.0 (API 26) or later
+- A 64-bit ARM device (arm64-v8a); 32-bit-only devices and x86 emulators are not supported by the release APK
 - Android System WebView
 - A music player that exposes a standard Android MediaSession
 

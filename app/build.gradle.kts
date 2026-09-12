@@ -22,6 +22,12 @@ android {
         targetSdk = 34
         versionCode = 104
         versionName = "1.04"
+
+        // Public APK targets modern Android phones. Keeping only 64-bit ARM
+        // avoids packaging three unused copies of ML Kit's native translator.
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     signingConfigs {
