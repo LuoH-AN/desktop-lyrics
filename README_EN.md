@@ -29,7 +29,7 @@ Watch on Bilibili: [Desktop Lyrics for Android — Apple Music / Spotify real-ti
 
 - Local, real-time track title, artist, album, playback state, progress, and artwork
 - Parallel searches across LRCLIB, QQ Music, and NetEase Cloud Music, ranked by title, artist, album, duration, and version metadata; an iTunes catalog lookup can supply localized aliases when every direct search fails
-- NetEase word-timed lyrics and official translations, with original, bilingual, or translated display modes and manual source switching
+- QQ Music and NetEase word-timed lyrics and official translations, with original, bilingual, or translated display modes
 - In-overlay previous, play/pause, and next controls, plus a seekable progress bar
 - Full and compact overlay modes with continuous free resizing and dragging
 - Rotate all full-overlay content by 90° inside a fixed outer frame without rotating the system UI; the horizontal view uses a 25% media / 75% lyrics split
@@ -40,11 +40,12 @@ Watch on Bilibili: [Desktop Lyrics for Android — Apple Music / Spotify real-ti
 - Color presets, a full RGB color picker, and a ±5-second lyric timing offset remembered separately for each track and lyrics source
 - Untimed plain lyrics remain usable with a clear label and smooth progress-based scrolling
 - Optional on-device translation with downloadable ML Kit language packs, plus editable DeepSeek, GLM, Gemini, or custom Chat Completions-compatible API profiles
-- Transparent, low-load, and high-load animated album-color backgrounds
+- Transparent, low-load, medium-load, and high-load album-color backgrounds; medium load throttles only the animated background, not word highlighting
 - Media volume plus responsive playback controls and marquee information pills for narrow overlays
 - A minimum width of roughly one third of the screen, with seamless marquee titles
 - Keeps the screen awake while the overlay is visible and releases that behavior when closed
-- Tries multiple candidates, rejects empty lyrics and provider placeholder messages, supports symbol-only titles and cross-script aliases, and allows up to 10 seconds on slow networks
+- Tries multiple candidates, rejects empty, title-only, credit-only, and provider-placeholder lyrics, supports symbol-only titles and cross-script aliases, and allows up to 10 seconds on slow networks
+- Tap the source pill to cycle providers, double-tap to rematch the current provider and remember the selected recording, or long-press to restore automatic matching; a failed rematch keeps the current lyrics
 
 ## Requirements and compatibility
 
@@ -66,6 +67,7 @@ Long-running behavior may vary with vendor-specific battery restrictions. If the
 5. Tap the resize icon to switch modes, or long-press and drag it for continuous resizing.
 6. In full mode, tap the rotation icon to turn the overlay content by 90° while keeping the outer footprint unchanged.
 7. Use the playback buttons or drag the progress bar to control the active player. After browsing the lyrics, tap a timed line to seek to it.
+8. If the lyrics are mismatched, double-tap the QQ Music, NetEase, or LRCLIB source pill to try the next candidate from that provider. Long-press it to clear the remembered choice for that track and provider.
 
 ## Permissions and privacy
 
@@ -94,7 +96,7 @@ To build a signed APK, copy `keystore.properties.example` to `keystore.propertie
 
 ## Project information
 
-- Current release: `1.04` (versionCode 104)
+- Current release: `1.05` (versionCode 105)
 - Android package: `com.tcrrry.desktoplyrics`
 - Author: Bilibili `@Tcrrrry`
 

@@ -33,6 +33,7 @@ class DirectLyricsRepository {
         val durationMs: Long = 0L,
         val cover: String = "",
         val source: String = "",
+        val recordId: String = "",
         val score: Int = 0,
         val alternatives: List<Result> = emptyList()
     ) {
@@ -43,6 +44,8 @@ class DirectLyricsRepository {
             .put("duration", durationMs)
             .put("cover", cover)
             .put("source", source)
+            .put("recordId", recordId)
+            .put("matchScore", score)
 
         fun toJson(): JSONObject = candidateJson().put(
             "alternatives",
@@ -56,7 +59,53 @@ class DirectLyricsRepository {
     private data class JsonMatch(val value: JSONObject, val score: Int)
     private data class SearchPlan(val track: String, val query: String, val includesArtist: Boolean)
     private data class ResolvedIdentity(val track: String, val artist: String, val album: String)
+    private data class QqRichLyrics(
+        val lineLyrics: String,
+        val translatedLyrics: String,
+        val wordLyrics: String
+    )
     private val identityCache = ConcurrentHashMap<String, ResolvedIdentity>()
+    private val artistAliasCache = ConcurrentHashMap<String, Set<String>>()
+    private val providerCooldown = ConcurrentHashMap<String, Long>()
+    private val excludedRecords = ThreadLocal<Set<String>>()
+
+    fun rematch(source: String, track: String, artist: String, album: String,
+                durationMs: Long, excluded: Set<String>): Result? {
+        excludedRecords.set(excluded.take(32).toSet())
+        try {
+            fun query(title: String, singer: String): Result? = when (source) {
+                "QQ音乐" -> queryQqMusic(title, singer, true, durationMs)
+                "网易云音乐" -> queryNetEase(title, singer, true, durationMs)
+                "LRCLIB" -> queryLrcLib(title, singer, durationMs)
+                else -> null
+            }
+            val direct = query(track, artist)
+            if (direct != null && direct.score >= MIN_ACCEPTABLE_SCORE) return direct
+            val identity = resolveLocalizedIdentity(track, artist, album, durationMs) ?: return null
+            return query(identity.track, identity.artist)?.takeIf { it.score >= MIN_ACCEPTABLE_SCORE }
+        } finally { excludedRecords.remove() }
+    }
+
+    private fun providerKey(url: String): String = when {
+        URL(url).host.endsWith("music.163.com") -> "netease"
+        URL(url).host.endsWith("qq.com") -> "qq"
+        URL(url).host == "lrclib.net" -> "lrclib"
+        else -> URL(url).host
+    }
+
+    private fun checkProvider(url: String) {
+        if ((providerCooldown[providerKey(url)] ?: 0L) > System.nanoTime()) {
+            throw IllegalStateException("Provider cooling down after request failure")
+        }
+    }
+
+    private fun checkStatus(url: String, status: Int) {
+        if (status == 405 || status == 429 || status == 503) {
+            val seconds = if (status == 503) 15L else 60L
+            providerCooldown[providerKey(url)] = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds)
+            throw IllegalStateException("Provider status=$status; cooldown=${seconds}s")
+        }
+    }
 
     private val executor = Executors.newFixedThreadPool(6) { runnable ->
         Thread(runnable, "direct-lyrics").apply { isDaemon = true }
@@ -66,10 +115,15 @@ class DirectLyricsRepository {
         track: String,
         artist: String,
         album: String = "",
-        expectedDurationMs: Long = 0L
+        expectedDurationMs: Long = 0L,
+        onPartial: (Result) -> Unit = {}
     ): Result {
         val direct = resolveFromProviders(track, artist, expectedDurationMs)
-        if (isUsableLyrics(direct.lyrics)) return direct
+        val current = (listOf(direct) + direct.alternatives).filter { isUsableLyrics(it.lyrics) }
+        // A usable lyric is not proof that all providers found the correct identity.
+        val incomplete = current.size < 3 || current.any(::needsEnrichment)
+        if (current.isNotEmpty() && !incomplete) return direct
+        if (current.isNotEmpty()) onPartial(direct)
 
         val identity = runCatching {
             resolveLocalizedIdentity(track, artist, album, expectedDurationMs)
@@ -89,24 +143,39 @@ class DirectLyricsRepository {
             "Lyrics identity bridge ${track.take(40)} / ${artist.take(32)} -> " +
                 "${identity.track.take(40)} / ${identity.artist.take(32)}"
         )
-        return resolveFromProviders(identity.track, identity.artist, expectedDurationMs)
+        val retrySources = setOf("网易云音乐", "QQ音乐", "LRCLIB").filter { source ->
+            current.none { it.source == source } || current.any { it.source == source && needsEnrichment(it) }
+        }.toSet()
+        val retried = resolveFromProviders(identity.track, identity.artist, expectedDurationMs, retrySources)
+        val combined = (current + retried + retried.alternatives)
+            .filter { isUsableLyrics(it.lyrics) }
+            .sortedByDescending(::qualityRank).distinctBy { it.source }
+        val best = combined.firstOrNull() ?: return direct
+        return best.copy(alternatives = combined.drop(1).map { it.copy(alternatives = emptyList()) })
     }
 
-    private fun resolveFromProviders(track: String, artist: String, expectedDurationMs: Long): Result {
+    private fun resolveFromProviders(track: String, artist: String, expectedDurationMs: Long,
+                                     sources: Set<String> = setOf("网易云音乐", "QQ音乐", "LRCLIB")): Result {
+        val available = ConcurrentHashMap<String, Result>()
+        val remember: (Result) -> Unit = { result ->
+            available.compute(result.source) { _, previous ->
+                if (previous == null || qualityRank(result) > qualityRank(previous)) result else previous
+            }
+        }
         val completion = ExecutorCompletionService<Result?>(executor)
         val futures = listOf(
             completion.submit(Callable {
-                querySource("LRCLIB", track) { queryLrcLib(track, artist, expectedDurationMs) }
+                if ("LRCLIB" in sources) querySource("LRCLIB", track) { queryLrcLib(track, artist, expectedDurationMs) } else null
             }),
             completion.submit(Callable {
-                querySource("QQ", track) {
-                    queryQqMusic(track, artist, includeLyrics = true, expectedDurationMs)
-                }
+                if ("QQ音乐" in sources) querySource("QQ", track) {
+                    queryQqMusic(track, artist, includeLyrics = true, expectedDurationMs, remember)
+                } else null
             }),
             completion.submit(Callable {
-                querySource("NetEase", track) {
-                    queryNetEase(track, artist, includeLyrics = true, expectedDurationMs)
-                }
+                if ("网易云音乐" in sources) querySource("NetEase", track) {
+                    queryNetEase(track, artist, includeLyrics = true, expectedDurationMs, remember)
+                } else null
             })
         )
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(LYRICS_DEADLINE_MS)
@@ -135,7 +204,9 @@ class DirectLyricsRepository {
         } finally {
             futures.forEach { it.cancel(true) }
         }
-        val ranked = candidates
+        val ranked = (candidates + available.values.toList())
+            .sortedByDescending(::qualityRank)
+            .distinctBy { it.source }
             .distinctBy { "${it.source}\u0000${it.lyrics}" }
             .sortedByDescending(::qualityRank)
         val primary = ranked.firstOrNull() ?: return Result()
@@ -195,23 +266,55 @@ class DirectLyricsRepository {
         }
     }
 
+    private fun providerArtistAliases(artist: String): Set<String> {
+        val key = normalize(artist)
+        artistAliasCache[key]?.let { return it }
+        val aliases = mutableSetOf(key)
+        return runCatching {
+            val root = JSONObject(getText(
+                "https://music.163.com/api/search/get/web?type=100&limit=3&s=${encode(artist)}",
+                mapOf("Referer" to "https://music.163.com/")
+            ))
+            val artists = root.optJSONObject("result")?.optJSONArray("artists") ?: return@runCatching aliases
+            for (index in 0 until artists.length()) {
+                val entry = artists.optJSONObject(index) ?: continue
+                // Search ranking alone must never create a new artist identity.
+                if (normalize(entry.optString("name")) != key) continue
+                val names = entry.optJSONArray("alias") ?: entry.optJSONArray("alia") ?: continue
+                for (i in 0 until names.length()) normalize(names.optString(i)).takeIf { it.isNotBlank() }?.let(aliases::add)
+            }
+            if (artistAliasCache.size >= 128) artistAliasCache.keys.firstOrNull()?.let(artistAliasCache::remove)
+            artistAliasCache[key] = aliases.toSet()
+            aliases.toSet()
+        }.getOrDefault(aliases)
+    }
+
     private fun queryLrcLib(track: String, artist: String, expectedDurationMs: Long): Result? {
         val url = "https://lrclib.net/api/search?track_name=${encode(track)}&artist_name=${encode(artist)}"
-        val list = JSONArray(getText(url, mapOf("Accept" to "application/json")))
         var best: Result? = null
+        for (broad in listOf(false, true)) {
+        val requestUrl = if (broad) "https://lrclib.net/api/search?track_name=${encode(track)}" else url
+        val list = JSONArray(getText(requestUrl, mapOf("Accept" to "application/json", "User-Agent" to "DesktopLyrics/1.05")))
+        val aliases = if (broad && list.length() > 0) providerArtistAliases(artist) else setOf(normalize(artist))
         for (index in 0 until list.length()) {
             val item = list.optJSONObject(index) ?: continue
+            if (item.optLong("id").toString() in excludedRecords.get().orEmpty()) continue
             val syncedLyrics = item.optString("syncedLyrics")
             val plainLyrics = item.optString("plainLyrics")
             val lyrics = if (isUsableLyrics(syncedLyrics)) syncedLyrics else plainLyrics
             if (!isUsableLyrics(lyrics)) continue
             val synced = isUsableLyrics(syncedLyrics)
             val durationMs = (item.optDouble("duration", 0.0) * 1000.0).toLong()
+            val candidateArtist = item.optString("artistName")
+            val aliasMatch = normalize(candidateArtist) in aliases
+            if (broad && (!aliasMatch || titleIdentityKey(track) != titleIdentityKey(item.optString("trackName")) ||
+                    expectedDurationMs <= 0 || kotlin.math.abs(expectedDurationMs - durationMs) > 8000L ||
+                    versionTags(track) != versionTags(item.optString("trackName")))) continue
             val score = platformMatchScore(
                 track,
                 artist,
                 item.optString("trackName"),
-                item.optString("artistName"),
+                if (aliasMatch) artist else candidateArtist,
                 expectedDurationMs,
                 durationMs
             ) + if (synced) 5 else 0
@@ -219,9 +322,12 @@ class DirectLyricsRepository {
                 lyrics = lyrics,
                 durationMs = durationMs,
                 source = "LRCLIB",
+                recordId = item.optLong("id").toString(),
                 score = score
             )
             if (best == null || result.score > best.score) best = result
+        }
+        if (best != null && best!!.score >= MIN_ACCEPTABLE_SCORE) return best
         }
         return best
     }
@@ -230,7 +336,8 @@ class DirectLyricsRepository {
         track: String,
         artist: String,
         includeLyrics: Boolean,
-        expectedDurationMs: Long = 0L
+        expectedDurationMs: Long = 0L,
+        onCandidate: (Result) -> Unit = {}
     ): Result? {
         val headers = mapOf(
             "Accept" to "application/json",
@@ -246,6 +353,9 @@ class DirectLyricsRepository {
                 ?.optJSONObject("song")
                 ?.optJSONArray("list") ?: continue
             val rejectedSongMids = mutableSetOf<String>()
+            var best: Result? = null
+            var firstSong: JSONObject? = null
+            var extraTried = false
             while (rejectedSongMids.size < MAX_LYRIC_CANDIDATES_PER_QUERY) {
                 val match = firstJsonMatch(
                     songs,
@@ -257,14 +367,22 @@ class DirectLyricsRepository {
                     candidateDurationMs = { it.optLong("interval", 0L) * 1000L },
                     isUsable = { item ->
                         val mid = item.optString("songmid")
-                        mid !in rejectedSongMids &&
+                        mid !in rejectedSongMids && mid !in excludedRecords.get().orEmpty() &&
                             (!includeLyrics || (mid.isNotBlank() && mid != "0"))
                     }
                 ) { item ->
                     val singers = item.optJSONArray("singer").joinNames("name")
                     Triple(item.optString("songname").ifBlank { item.optString("songorig") }, singers, item)
-                } ?: continue@planLoop
+                } ?: run { if (best != null) return best; null } ?: continue@planLoop
                 val song = match.value
+                if (firstSong != null) {
+                    if (extraTried || !sameRecording(
+                        firstSong!!.optString("songname"), song.optString("songname"),
+                        firstSong!!.optJSONArray("singer").joinNames("name"), song.optJSONArray("singer").joinNames("name"),
+                        firstSong!!.optLong("interval", 0L) * 1000L, song.optLong("interval", 0L) * 1000L
+                    )) return best
+                    extraTried = true
+                }
                 val score = match.score
                 val albumMid = song.optString("albummid")
                 val albumId = song.optLong("albumid", 0L)
@@ -278,32 +396,190 @@ class DirectLyricsRepository {
                 if (!includeLyrics) return Result(cover = cover, source = "QQ音乐", score = score)
 
                 val songMid = song.optString("songmid")
+                val richLyrics = song.optLong("songid", 0L).takeIf { it > 0L }?.let { songId ->
+                    runCatching { queryQqRichLyrics(songId, headers, track) }
+                        .onFailure { error ->
+                            Log.w(
+                                LOG_TAG,
+                                "QQ QRC failed for $songId: ${error.javaClass.simpleName}: " +
+                                    error.message.orEmpty().take(80)
+                            )
+                        }
+                        .getOrNull()
+                }
+                if (richLyrics != null && isUsableLyrics(richLyrics.lineLyrics)) {
+                    val result = Result(
+                        lyrics = richLyrics.lineLyrics,
+                        translatedLyrics = richLyrics.translatedLyrics,
+                        wordLyrics = richLyrics.wordLyrics,
+                        durationMs = song.optLong("interval", 0L) * 1000L,
+                        cover = cover,
+                        source = "QQ音乐",
+                        recordId = songMid,
+                        score = score + 5
+                    )
+                onCandidate(result)
+                if (best == null || qualityRank(result) > qualityRank(best!!)) best = result
+                if (firstSong != null || !needsEnrichment(result)) return best
+                firstSong = song
+                rejectedSongMids += songMid
+                continue
+                }
+
                 val lyricUrl = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg" +
                     "?songmid=${encode(songMid)}&format=json&nobase64=1&trans=1"
                 val lyricRoot = parseJsonFlexible(getBytes(lyricUrl, headers))
                 val lyrics = lyricRoot?.optString("lyric")?.let(::unescapeHtml).orEmpty()
-                if (!isUsableLyrics(lyrics)) {
+                if (!isUsableLyrics(lyrics) || isTitleOnlyLyrics(lyrics, track)) {
                     rejectedSongMids += songMid
                     continue
                 }
-                return Result(
+                val result = Result(
                     lyrics = lyrics,
                     translatedLyrics = unescapeHtml(lyricRoot?.optString("trans").orEmpty()),
                     durationMs = song.optLong("interval", 0L) * 1000L,
                     cover = cover,
                     source = "QQ音乐",
+                    recordId = songMid,
                     score = score + 5
                 )
+                onCandidate(result)
+                if (best == null || qualityRank(result) > qualityRank(best!!)) best = result
+                if (firstSong != null || !needsEnrichment(result)) return best
+                firstSong = song
+                rejectedSongMids += songMid
+                continue
             }
+            if (best != null) return best
         }
         return null
     }
+
+    private fun queryQqRichLyrics(songId: Long, headers: Map<String, String>, track: String): QqRichLyrics? {
+        val response = postFormText(
+            "https://c.y.qq.com/qqmusic/fcgi-bin/lyric_download.fcg",
+            headers + ("Referer" to "https://c.y.qq.com/"),
+            mapOf(
+                "version" to "15",
+                "miniversion" to "82",
+                "lrctype" to "4",
+                "musicid" to songId.toString()
+            )
+        )
+        if (!Regex("<result>\\s*0\\s*</result>").containsMatchIn(response)) return null
+
+        val encryptedOriginal = extractQqTrack(response, "content")
+        if (encryptedOriginal.isBlank()) return null
+        val originalPayload = decodeQqTrack(encryptedOriginal)
+        val original = extractQqLyricContent(originalPayload)
+        val lineLyrics = qrcToLineLrc(original)
+        if (!isUsableLyrics(lineLyrics) || isTitleOnlyLyrics(lineLyrics, track)) return null
+
+        val translatedPayload = extractQqTrack(response, "contentts")
+            .takeIf { it.isNotBlank() }
+            ?.let(::decodeQqTrack)
+            ?.let(::extractQqLyricContent)
+            .orEmpty()
+        val translated = cleanQqTranslation(qrcToLineLrc(translatedPayload))
+        val hasWordTiming = Regex("^\\[\\d+,\\d+]", RegexOption.MULTILINE).containsMatchIn(original) &&
+            Regex("\\(\\d+,\\d+(?:,\\d+)?\\)").containsMatchIn(original)
+
+        return QqRichLyrics(
+            lineLyrics = lineLyrics,
+            translatedLyrics = translated,
+            wordLyrics = if (hasWordTiming) qrcToCanonicalWordLyrics(original) else ""
+        )
+    }
+
+    private fun extractQqTrack(response: String, tag: String): String {
+        val safeTag = Regex.escape(tag)
+        return Regex(
+            "<$safeTag(?:\\s[^>]*)?><!\\[CDATA\\[(.*?)]]></$safeTag>",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        ).find(response)?.groupValues?.getOrNull(1).orEmpty().trim()
+    }
+
+    private fun decodeQqTrack(payload: String): String {
+        val normalized = payload.trim()
+        return if (normalized.length >= 16 && normalized.length % 2 == 0 &&
+            normalized.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }
+        ) {
+            QqQrcDecoder.decode(normalized)
+        } else {
+            normalized
+        }
+    }
+
+    private fun extractQqLyricContent(payload: String): String {
+        val content = Regex(
+            "LyricContent=\\\"(.*?)\\\"",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        ).find(payload)?.groupValues?.getOrNull(1) ?: payload
+        return unescapeHtml(content).replace("&#10;", "\n").replace("&#13;", "")
+    }
+
+    // QQ places each timestamp after its text; the renderer expects it before.
+    private fun qrcToCanonicalWordLyrics(payload: String): String {
+        val linePattern = Regex("^\\[(\\d+),(\\d+)\\](.*)$")
+        val markerPattern = Regex("\\((\\d+),(\\d+)(?:,\\d+)?\\)")
+        return payload.replace("\r", "").lineSequence().mapNotNull { raw ->
+            val line = linePattern.matchEntire(raw.trim()) ?: return@mapNotNull null
+            val body = line.groupValues[3]
+            val markers = markerPattern.findAll(body).toList()
+            if (markers.isEmpty()) return@mapNotNull null
+            var cursor = 0
+            val converted = buildString {
+                for (marker in markers) {
+                    val text = body.substring(cursor, marker.range.first)
+                    append("(${marker.groupValues[1]},${marker.groupValues[2]})")
+                    append(text)
+                    cursor = marker.range.last + 1
+                }
+                append(body.substring(cursor))
+            }
+            "[${line.groupValues[1]},${line.groupValues[2]}]$converted"
+        }.joinToString("\n")
+    }
+
+    private fun qrcToLineLrc(payload: String): String {
+        if (payload.isBlank()) return ""
+        val qrcLine = Regex("^\\[(\\d+),(\\d+)](.*)$")
+        val wordMarker = Regex("\\(\\d+,\\d+(?:,\\d+)?\\)")
+        return payload.replace("\r", "").lineSequence().mapNotNull { raw ->
+            val line = raw.trim()
+            val match = qrcLine.matchEntire(line)
+            if (match == null) {
+                line.takeIf { Regex("^\\[\\d{1,3}:\\d{2}(?:[.:]\\d+)?]").containsMatchIn(it) }
+            } else {
+                val start = match.groupValues[1].toLongOrNull() ?: return@mapNotNull null
+                val text = match.groupValues[3].replace(wordMarker, "").trim()
+                if (text.isBlank()) null else "${formatLrcTime(start)}$text"
+            }
+        }.joinToString("\n")
+    }
+
+    private fun formatLrcTime(milliseconds: Long): String {
+        val safe = milliseconds.coerceAtLeast(0L)
+        val minutes = safe / 60_000L
+        val seconds = (safe / 1_000L) % 60L
+        val millis = safe % 1_000L
+        return "[%02d:%02d.%03d]".format(Locale.US, minutes, seconds, millis)
+    }
+
+    private fun cleanQqTranslation(lyrics: String): String = lyrics.lineSequence()
+        .filterNot { line ->
+            val text = line.replace(Regex("^(\\[[^]]+])+"), "").trim()
+            text == "//" || text.contains("QQ音乐享有本翻译作品的著作权") ||
+                text.contains("TME享有本翻译作品的著作权")
+        }
+        .joinToString("\n")
 
     private fun queryNetEase(
         track: String,
         artist: String,
         includeLyrics: Boolean,
-        expectedDurationMs: Long = 0L
+        expectedDurationMs: Long = 0L,
+        onCandidate: (Result) -> Unit = {}
     ): Result? {
         val headers = mapOf(
             "Accept" to "application/json",
@@ -317,6 +593,9 @@ class DirectLyricsRepository {
             val root = JSONObject(getText(searchUrl, headers))
             val songs = root.optJSONObject("result")?.optJSONArray("songs") ?: continue
             val rejectedSongIds = mutableSetOf<Long>()
+            var best: Result? = null
+            var firstSong: JSONObject? = null
+            var extraTried = false
             while (rejectedSongIds.size < MAX_LYRIC_CANDIDATES_PER_QUERY) {
                 val match = firstJsonMatch(
                     songs,
@@ -328,13 +607,21 @@ class DirectLyricsRepository {
                     candidateDurationMs = { it.optLong("duration", it.optLong("dt", 0L)) },
                     isUsable = { item ->
                         val id = item.optLong("id", 0L)
-                        id > 0L && id !in rejectedSongIds
+                        id > 0L && id !in rejectedSongIds && id.toString() !in excludedRecords.get().orEmpty()
                     }
                 ) { item ->
                     val artists = (item.optJSONArray("artists") ?: item.optJSONArray("ar")).joinNames("name")
                     Triple(item.optString("name"), artists, item)
-                } ?: continue@planLoop
+                } ?: run { if (best != null) return best; null } ?: continue@planLoop
                 val song = match.value
+                if (firstSong != null) {
+                    if (extraTried || !sameRecording(
+                        firstSong!!.optString("name"), song.optString("name"),
+                        firstSong!!.optJSONArray("artists").joinNames("name"), song.optJSONArray("artists").joinNames("name"),
+                        firstSong!!.optLong("duration", 0L), song.optLong("duration", 0L)
+                    )) return best
+                    extraTried = true
+                }
                 val score = match.score
                 val album = song.optJSONObject("album") ?: song.optJSONObject("al")
                 var cover = album?.optString("picUrl").orEmpty()
@@ -357,7 +644,7 @@ class DirectLyricsRepository {
                     rejectedSongIds += songId
                     continue
                 }
-                return Result(
+                val result = Result(
                     lyrics = lyrics,
                     translatedLyrics = lyricRoot.optJSONObject("tlyric")?.optString("lyric").orEmpty(),
                     wordLyrics = lyricRoot.optJSONObject("yrc")?.optString("lyric")
@@ -366,9 +653,17 @@ class DirectLyricsRepository {
                     durationMs = song.optLong("duration", song.optLong("dt", 0L)),
                     cover = cover,
                     source = "网易云音乐",
+                    recordId = songId.toString(),
                     score = score + 5
                 )
+                onCandidate(result)
+                if (best == null || qualityRank(result) > qualityRank(best!!)) best = result
+                if (firstSong != null || !needsEnrichment(result)) return best
+                firstSong = song
+                rejectedSongIds += songId
+                continue
             }
+            if (best != null) return best
         }
         return null
     }
@@ -390,6 +685,7 @@ class DirectLyricsRepository {
             val item = array.optJSONObject(index) ?: continue
             if (!isUsable(item)) continue
             val (title, singer, value) = fields(item)
+            if (versionTags(title) != versionTags(track)) continue
             val originalScore = platformMatchScore(
                 track, artist, title, singer, expectedDurationMs, candidateDurationMs(item)
             )
@@ -515,6 +811,7 @@ class DirectLyricsRepository {
         if (secondScore != Int.MIN_VALUE && best.second < IDENTITY_STRONG_SCORE &&
             best.second - secondScore < IDENTITY_MIN_MARGIN
         ) return null
+        if (identityCache.size >= 128) identityCache.keys.firstOrNull()?.let(identityCache::remove)
         identityCache[cacheKey] = best.first
         return best.first
     }
@@ -712,11 +1009,32 @@ class DirectLyricsRepository {
         return same.toDouble() / maxOf(first.length, second.length).toDouble()
     }
 
+    private fun sameRecording(title: String, otherTitle: String, artist: String, otherArtist: String,
+                              duration: Long, otherDuration: Long): Boolean =
+        titleIdentityKey(title) == titleIdentityKey(otherTitle) &&
+            normalize(artist).isNotBlank() && normalize(artist) == normalize(otherArtist) &&
+            versionTags(title) == versionTags(otherTitle) && duration > 0 && otherDuration > 0 &&
+            kotlin.math.abs(duration - otherDuration) <= 3000L
+
+    private fun coverage(original: String, extra: String): Int {
+        if (!isUsableLyrics(extra)) return 0
+        fun timedLines(text: String): Int = text.lineSequence().count {
+            Regex("^\\[(?:\\d+:\\d+|\\d+,\\d+)").containsMatchIn(it.trim())
+        }
+        val base = timedLines(original).coerceAtLeast(1)
+        return (timedLines(extra) * 100 / base).coerceIn(0, 100)
+    }
+
+    private fun needsEnrichment(result: Result): Boolean = result.score >= EXACT_MATCH_SCORE &&
+        (coverage(result.lyrics, result.wordLyrics) < 80 ||
+            (Regex("[a-zA-Z\\u3040-\\u30ff\\uac00-\\ud7af]").containsMatchIn(result.lyrics) &&
+                coverage(result.lyrics, result.translatedLyrics) < 80))
+
     private fun qualityRank(result: Result): Int {
         val confidenceBand = if (result.score >= EXACT_MATCH_SCORE) 2 else 1
         return confidenceBand * 100_000 +
-        (if (isUsableLyrics(result.translatedLyrics)) 20_000 else 0) +
-        (if (isUsableLyrics(result.wordLyrics)) 10_000 else 0) +
+        coverage(result.lyrics, result.translatedLyrics) * 200 +
+        coverage(result.lyrics, result.wordLyrics) * 100 +
         result.score * 100 +
         lyricBodyScore(result.lyrics) +
         when (result.source) {
@@ -726,15 +1044,27 @@ class DirectLyricsRepository {
         }
     }
 
+    private fun isTitleOnlyLyrics(value: String, track: String): Boolean {
+        val lines = value.lineSequence().map { it.replace(Regex("^(\\[[^]]+])+"), "").trim() }
+            .filter { it.isNotBlank() }.toList()
+        if (lines.size != 1) return false
+        val title = lines[0].split(Regex("\\s+[-–—]\\s+"), limit = 2)[0]
+        return titleIdentityKey(title) == titleIdentityKey(track)
+    }
+
     private fun isUsableLyrics(value: String): Boolean {
         val normalized = value.trim()
         if (normalized.isEmpty() || normalized.equals("null", true) ||
             normalized.equals("undefined", true)
         ) return false
 
-        val body = normalized.lineSequence()
+        val meaningful = normalized.lineSequence()
             .map { it.replace(Regex("^(\\[[^]]+])+"), "").trim() }
             .filter { it.isNotBlank() }
+            .filterNot { Regex("^(?:作词|作詞|作曲|编曲|編曲|词|詞|曲|制作人|製作人|混音|母带|录音|演唱|歌手|composer|lyricist|arranger|producer)\\s*[:：]", RegexOption.IGNORE_CASE).containsMatchIn(it) }
+            .toList()
+        if (meaningful.isEmpty()) return false
+        val body = meaningful.asSequence()
             .joinToString("")
             .replace(Regex("[\\s,，。.!！?？、]"), "")
         if (body.length <= 48 && PLACEHOLDER_LYRICS.any { it.matches(body) }) return false
@@ -760,10 +1090,58 @@ class DirectLyricsRepository {
         }.joinToString("/")
     }
 
-    private fun getText(url: String, headers: Map<String, String>): String =
-        getBytes(url, headers).toString(Charsets.UTF_8)
+    private fun getText(url: String, headers: Map<String, String>): String {
+        val text = getBytes(url, headers).toString(Charsets.UTF_8)
+        if (text.trimStart().startsWith("{")) {
+            runCatching { JSONObject(text) }.getOrNull()?.let { checkStatus(url, it.optInt("code", 0)) }
+        }
+        return text
+    }
+
+    private fun postFormText(
+        url: String,
+        headers: Map<String, String>,
+        fields: Map<String, String>
+    ): String {
+        checkProvider(url)
+        val body = fields.entries.joinToString("&") { (key, value) ->
+            "${encode(key)}=${encode(value)}"
+        }.toByteArray(Charsets.UTF_8)
+        val connection = URL(url).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = CONNECT_TIMEOUT_MS
+            connection.readTimeout = READ_TIMEOUT_MS
+            connection.instanceFollowRedirects = true
+            connection.useCaches = false
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+            connection.setFixedLengthStreamingMode(body.size)
+            headers.forEach(connection::setRequestProperty)
+            connection.outputStream.use { it.write(body) }
+            val status = connection.responseCode
+            checkStatus(url, status)
+            if (status !in 200..299) throw IllegalStateException("HTTP $status")
+            connection.inputStream.use { input ->
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                var total = 0
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > MAX_RESPONSE_BYTES) throw IllegalStateException("Response too large")
+                    output.write(buffer, 0, read)
+                }
+                return output.toString(Charsets.UTF_8.name())
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
 
     private fun getBytes(url: String, headers: Map<String, String>): ByteArray {
+        checkProvider(url)
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"
@@ -773,6 +1151,7 @@ class DirectLyricsRepository {
             connection.useCaches = true
             headers.forEach(connection::setRequestProperty)
             val status = connection.responseCode
+            checkStatus(url, status)
             if (status !in 200..299) throw IllegalStateException("HTTP $status")
             connection.inputStream.use { input ->
                 val output = ByteArrayOutputStream()

@@ -21,6 +21,32 @@
       --soft: rgba(255,255,255,.38);
     }
     * { box-sizing: border-box; }
+    #match-notice,.match-panel {
+      color:#fff; border:1px solid rgba(255,255,255,.28);
+      background:linear-gradient(125deg,rgba(var(--c1),.68),rgba(var(--c2),.64)),rgba(45,48,64,.68);
+      backdrop-filter:blur(22px) saturate(1.15); -webkit-backdrop-filter:blur(22px) saturate(1.15);
+      box-shadow:0 8px 28px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.13);
+    }
+    #match-notice {
+      position:fixed; bottom:14px; left:50%; width:max-content; max-width:calc(100% - 28px);
+      z-index:100; border-radius:22px; padding:11px 17px; font-family:inherit;
+      font-size:12px; font-weight:600; line-height:1.5; text-align:center; pointer-events:none;
+      opacity:0; transform:translate(-50%,7px); transition:opacity .24s ease,transform .24s ease;
+    }
+    #match-notice.visible { opacity:1; transform:translate(-50%,0); }
+    #match-menu { position:fixed; inset:0; z-index:101; display:grid; place-items:center; padding:12px;
+      background:rgba(30,32,47,.12); opacity:0; transition:opacity .2s ease; }
+    .match-panel { width:100%; max-width:300px; max-height:100%; overflow:auto; border-radius:24px;
+      padding:18px; display:grid; gap:10px; transform:translateY(10px) scale(.97); transition:transform .24s ease; }
+    #match-menu.visible { opacity:1; }
+    #match-menu.visible .match-panel { transform:translateY(0) scale(1); }
+    .match-panel h3 { margin:0; font-size:16px; font-weight:700; }
+    .match-panel p { margin:0 0 5px; font-size:11px; line-height:1.6; color:rgba(255,255,255,.76); }
+    .match-panel button { width:100%; border:1px solid rgba(255,255,255,.18); border-radius:17px;
+      padding:12px 10px; color:inherit; font:inherit; font-size:12px; font-weight:600;
+      background:rgba(255,255,255,.12); transition:background .15s,transform .15s; }
+    .match-panel button:first-of-type { color:#292e46; background:linear-gradient(110deg,#f4f1ff,#cddaff); }
+    .match-panel button:active { transform:scale(.97); }
     html, body { width:100%; height:100%; margin:0; overflow:hidden; }
     body {
       color:#fff;
@@ -35,7 +61,7 @@
       opacity:.78; transition:opacity 1.4s ease;
       filter:saturate(1.28) contrast(1.08);
     }
-    body.background-high #fluid { display:block; }
+    body.background-medium #fluid,body.background-high #fluid { display:block; }
     #low-fluid {
       position:fixed; inset:0; z-index:0; display:none; overflow:hidden;
       background:#111217; contain:strict;
@@ -102,7 +128,7 @@
     .waiting-title { font-size:17px; font-weight:780; letter-spacing:-.02em; }
     .waiting-copy { margin-top:7px; max-width:235px; color:var(--muted); font-size:12px; line-height:1.55; }
     #player {
-      height:100%; padding:9px; display:grid; grid-template-rows:58px 22px 15px minmax(0,1fr);
+      height:100%; padding:9px; display:grid; grid-template-rows:58px 24px 15px minmax(0,1fr);
       gap:5px; opacity:0; transform:scale(.985); pointer-events:none;
       transition:opacity .32s ease,transform .32s cubic-bezier(.22,.8,.25,1);
     }
@@ -125,10 +151,10 @@
     @keyframes ring { 50% { border-color:rgba(255,255,255,.12); } }
     .meta-copy { min-width:0; }
     .eyebrow { display:flex; min-width:0; align-items:center; gap:7px; margin-bottom:4px; padding-right:112px; overflow:hidden; color:rgba(255,255,255,.68); font-size:9px; font-weight:720; letter-spacing:.1em; text-transform:uppercase; }
-    .dot { flex:0 0 auto; width:6px; height:6px; border-radius:99px; background:#a5a8b0; box-shadow:0 0 0 0 rgba(120,255,172,.35); }
+    .dot { flex:0 0 auto; width:6px; height:6px; border-radius:99px; background:#a5a8b0; }
     body.playing .dot { background:#72f6a4; animation:pulse 1.7s ease-out infinite; }
-    @keyframes pulse { 60% { box-shadow:0 0 0 7px rgba(114,246,164,0); } }
-    #track { overflow:hidden; white-space:nowrap; font-size:17px; line-height:1.12; font-weight:830; letter-spacing:-.035em; text-shadow:0 3px 18px rgba(0,0,0,.18); }
+    @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 60% { opacity:.55; transform:scale(.78); } }
+    #track { overflow:hidden; white-space:nowrap; font-size:17px; line-height:1.12; font-weight:830; letter-spacing:-.035em; text-shadow:none; }
     #state-viewport { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap; }
     #state-label,#track-text { display:inline-block; white-space:nowrap; will-change:transform; }
     #track-text { min-width:100%; }
@@ -142,25 +168,31 @@
       to { transform:translate3d(var(--marquee-shift,0px),0,0); }
     }
     .artist-row { min-width:0; margin-top:3px; }
-    #artist-viewport { min-width:0; overflow:hidden; white-space:nowrap; color:var(--muted); font-size:11px; font-weight:560; }
+    #artist-viewport,.progress-time { font-family:inherit; color:var(--muted); font-size:11px; font-weight:560; line-height:normal; letter-spacing:normal; text-shadow:none; }
+    #artist-viewport { min-width:0; overflow:hidden; white-space:nowrap; }
     #artist { display:inline-block; min-width:100%; white-space:nowrap; will-change:transform; }
     .transport-controls {
-      display:inline-flex; align-items:center; gap:7px; height:22px;
+      display:inline-flex; align-items:center; gap:5px; height:22px;
     }
     .transport-button {
-      display:grid; place-items:center; width:28px; height:22px; padding:0;
+      display:grid; place-items:center; width:34px; height:22px; padding:0;
       color:rgba(255,255,255,.9); background:rgba(255,255,255,.11);
       border:1px solid rgba(255,255,255,.13); border-radius:99px; outline:none;
       -webkit-tap-highlight-color:transparent; transition:background-color .14s ease,opacity .14s ease,transform .1s ease;
     }
-    .transport-button svg { display:block; width:14px; height:14px; fill:currentColor; }
+    .transport-button svg { display:block; width:15px; height:15px; fill:currentColor; }
     .transport-button:active:not(:disabled) { background:rgba(255,255,255,.18); transform:scale(.91); }
     .transport-button:disabled { opacity:.28; }
     .transport-button .pause-icon { display:none; }
     .transport-button.is-pausing .play-icon { display:none; }
     .transport-button.is-pausing .pause-icon { display:block; }
-    .transport-row { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:7px; min-width:0; }
+    .transport-row { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:5px; min-width:0; }
     .chips-viewport { min-width:0; height:22px; overflow:hidden; }
+    .chips-viewport.is-scrolling,.loop-marquee.marquee,
+    .compact-text-viewport.marquee,.compact-text-viewport.is-overflowing {
+      -webkit-mask-image:linear-gradient(to right,transparent,#000 min(9px,12%),#000 calc(100% - min(9px,12%)),transparent);
+      mask-image:linear-gradient(to right,transparent,#000 min(9px,12%),#000 calc(100% - min(9px,12%)),transparent);
+    }
     .chips-track { display:flex; width:max-content; height:22px; will-change:transform; }
     .chips-track.marquee { animation:chipsMarquee var(--chips-duration,9s) linear infinite; }
     @keyframes chipsMarquee { to { transform:translate3d(var(--chips-shift,0px),0,0); } }
@@ -182,6 +214,10 @@
       background:rgba(255,255,255,.20); border-color:rgba(255,255,255,.22); transform:scale(.97);
     }
     .lyrics-viewport { position:relative; overflow:hidden; min-height:0; border-radius:14px; touch-action:none; }
+    .lyrics-viewport {
+      -webkit-mask-image:linear-gradient(to bottom,transparent,#000 min(14px,8%),#000 calc(100% - min(14px,8%)),transparent);
+      mask-image:linear-gradient(to bottom,transparent,#000 min(14px,8%),#000 calc(100% - min(14px,8%)),transparent);
+    }
     .lyrics-viewport::before,.lyrics-viewport::after { content:""; position:absolute; z-index:3; left:0; right:0; height:25%; pointer-events:none; }
     .lyrics-viewport::before { top:0; background:linear-gradient(to bottom,rgba(17,18,23,.48),transparent); }
     .lyrics-viewport::after { bottom:0; background:linear-gradient(to top,rgba(17,18,23,.42),transparent); }
@@ -217,15 +253,20 @@
       background-clip:text; -webkit-background-clip:text;
     }
     .compact-lyric { display:none; position:relative; min-width:0; min-height:0; overflow:hidden; }
+    .compact-lyric {
+      -webkit-mask-image:linear-gradient(to bottom,transparent,#000 4%,#000 96%,transparent);
+      mask-image:linear-gradient(to bottom,transparent,#000 4%,#000 96%,transparent);
+    }
     .compact-line {
-      position:absolute; left:0; right:0; top:100%; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:stretch; padding:0 4px 0 14px;
+      position:absolute; left:0; right:0; top:0; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:stretch; padding:0 4px 0 14px;
       overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
       color:rgb(var(--lyric-rgb)); font-size:var(--compact-font-size); line-height:1.15; font-weight:840; letter-spacing:-.035em;
-      text-shadow:0 4px 22px rgba(0,0,0,.32);
-      transition:top .38s cubic-bezier(.22,.8,.25,1);
+      text-shadow:none;
+      transform:translate3d(0,100%,0); will-change:transform;
+      transition:transform .38s cubic-bezier(.22,.8,.25,1);
     }
-    .compact-line.current { top:0; }
-    .compact-line.outgoing { top:-100%; }
+    .compact-line.current { transform:translate3d(0,0,0); }
+    .compact-line.outgoing { transform:translate3d(0,-100%,0); }
     .compact-line.no-transition { transition:none; }
     .compact-line-text { display:block; width:100%; min-width:0; overflow:hidden; white-space:nowrap; }
     .compact-next-line { display:none; width:100%; min-width:0; overflow:hidden; white-space:nowrap; color:rgba(var(--lyric-rgb),.52); font-size:var(--compact-next-size); line-height:1.15; font-weight:680; }
@@ -252,10 +293,12 @@
     .progress-shell::before { content:""; position:absolute; left:0; right:0; top:4.5px; height:6px; border-radius:999px; background:rgba(255,255,255,.22); }
     #progress {
       position:absolute; left:0; top:4.5px; width:0; height:6px; border-radius:999px; background:#fff;
-      box-shadow:0 0 9px rgba(255,255,255,.34); transition:width .1s linear;
+      transition:width .1s linear;
     }
     .progress-shell.seeking #progress { transition:none; }
-    .progress-time { color:rgba(255,255,255,.62); font:500 11px/1 ui-monospace,monospace; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .progress-time {
+      font-variant-numeric:tabular-nums; white-space:nowrap;
+    }
     .progress-time.total { text-align:right; }
     body.paused #fluid { opacity:.52; }
     body.background-transparent { background:transparent; }
@@ -296,7 +339,7 @@
       grid-column:1;
       grid-row:1;
       display:grid;
-      grid-template-rows:minmax(0,1fr) 22px 15px;
+      grid-template-rows:minmax(0,1fr) 51px 15px;
       gap:5px;
       min-width:0;
       min-height:0;
@@ -311,8 +354,13 @@
     body.horizontal-layout:not(.compact) .cover-wrap { width:68px; height:68px; border-radius:15px; }
     body.horizontal-layout:not(.compact) .meta-copy { width:100%; text-align:center; }
     body.horizontal-layout:not(.compact) .eyebrow { justify-content:center; padding-right:0; }
-    body.horizontal-layout:not(.compact) .transport-controls { gap:4px; }
-    body.horizontal-layout:not(.compact) .transport-button { width:24px; }
+    body.horizontal-layout:not(.compact) .transport-row {
+      grid-template-columns:minmax(0,1fr);
+      grid-template-rows:24px 22px;
+      gap:5px;
+    }
+    body.horizontal-layout:not(.compact) .transport-controls { justify-self:center; }
+    body.horizontal-layout:not(.compact) .chips-viewport { width:100%; }
     body.horizontal-layout:not(.compact) .footer { column-gap:4px; }
     @media (max-width:170px) {
       body:not(.compact) #player { padding-left:7px; padding-right:7px; }
@@ -432,7 +480,7 @@
     let supplementInFlight=false;
     let supplementWindowEnd=-1;
     let supplementPrefetchRemaining=4;
-    const LYRICS_CACHE_SCHEMA=2;
+    const LYRICS_CACHE_SCHEMA=3;
     const supplementChip=$('supplement-chip');
 
     function requestSupplement(reset=true) {
@@ -559,7 +607,10 @@
 
     function plainLyrics(raw) {
       return String(raw || '').replace(/\r/g,'').split('\n').map(v => v.trim()).filter(Boolean)
-        .filter(v => !/^\[[a-z]+:/i.test(v)).map((text,index) => ({ t:index * 100000000, text, plain:true }));
+        .filter(v => !/^\[[a-z]+:/i.test(v))
+        .map(v=>v.replace(/^(?:\[\d+:\d+[^\]]*\])+\s*/,''))
+        .filter(v=>v&&!/^(作词|作詞|作曲|编曲|編曲|词|曲|composer|lyricist|arranger)\s*[:：]/i.test(v))
+        .map((text,index) => ({ t:index * 100000000, text, plain:true }));
     }
 
     function parseWordLyrics(raw) {
@@ -1118,6 +1169,7 @@
       const followKey=String(line.t)+'\u0000'+line.text;
       const viewportWidth=viewport.clientWidth;
       const contentWidth=content.scrollWidth;
+      viewport.classList.toggle('is-overflowing',contentWidth>viewportWidth+4);
       const layoutChanged=Math.abs(compactWordFollow.width-viewportWidth)>1||
         Math.abs(compactWordFollow.contentWidth-contentWidth)>1;
       if(compactWordFollow.key!==followKey||layoutChanged){
@@ -1287,16 +1339,52 @@
       }
     }
 
+    function completeWordLyrics(data,lines) {
+      const words=parseWordLyrics(data.wordLyrics);
+      const base=lines.length?lines:plainLyrics(data.lyrics);
+      const length=rows=>rows.reduce((total,line)=>total+String(line.text||'').replace(/\s/g,'').length,0);
+      // Retain the full line/plain track when the word track only contains a title or fragment.
+      if(base.length && (words.length<base.length*.7 || length(words)<length(base)*.7))return [];
+      return words;
+    }
+
+    function candidateQuality(data) {
+      const lines=parseLrc(data.lyrics);
+      const words=completeWordLyrics(data,lines);
+      const base=lines.length?lines:plainLyrics(data.lyrics);
+      const count=Math.max(1,base.length);
+      const wordCoverage=Math.min(1,words.length/count);
+      const translated=attachTranslations(lines.length?lines:words,data.translatedLyrics);
+      const translationCoverage=Math.min(1,translated.filter(line=>line.translation).length/count);
+      const score=Number(data.matchScore)||0;
+      return (score>=95?200000:100000)+score*100+
+        (translationMode==='original'?wordCoverage*30000:translationCoverage*20000+wordCoverage*10000);
+    }
+
+    function preferredCandidateIndex() {
+      let best=0;
+      playback.candidates.forEach((candidate,index)=>{
+        if(candidateQuality(candidate)>candidateQuality(playback.candidates[best]))best=index;
+      });
+      return best;
+    }
+
+    let manualSourceKey='';
     function applyResolved(data, key, requestId) {
       if (key !== playback.key || requestId !== playback.requestId) return;
       const supplied=Array.isArray(data.alternatives)&&data.alternatives.length?data.alternatives:[data];
-      const candidates=supplied.filter(candidate=>candidate&&isUsableLyricPayload(candidate.lyrics));
+      const candidates=supplied.filter(candidate=>candidate&&isUsableLyricPayload(candidate.lyrics)).map(candidate=>{
+        const remembered=readMatchMemories().find(entry=>entry.key===matchMemoryKey(candidate.source));
+        return remembered?remembered.candidate:candidate;
+      });
       const signature=lyricsCandidateSignature(candidates);
       if(signature&&signature===candidateSignature&&playback.candidates.length)return;
       candidateSignature=signature;
+      const selectedSource=manualSourceKey===key?playback.candidates[playback.candidateIndex]?.source:null;
       playback.candidates=candidates;
       playback.candidateIndex=0;
-      applyCandidate(0);
+      const remembered=candidates.findIndex(candidate=>candidate.source===selectedSource);
+      applyCandidate(remembered>=0?remembered:preferredCandidateIndex());
     }
 
     function applyCandidate(index) {
@@ -1311,8 +1399,8 @@
           if(Number.isFinite(remembered))playback.lyricOffsetMs=Math.max(-5000,Math.min(5000,remembered));
         }catch(_){}
       }
-      const wordTimed=parseWordLyrics(data.wordLyrics);
       const lineTimed=parseLrc(data.lyrics);
+      const wordTimed=completeWordLyrics(data,lineTimed);
       const officialTranslations=parseLrc(data.translatedLyrics);
       currentHasOfficialTranslation=officialTranslations.length>0;
       const plainMode=!wordTimed.length&&!lineTimed.length;
@@ -1333,11 +1421,78 @@
       const now=performance.now();
       if(now<sourceSwitchUnlockAt)return;
       sourceSwitchUnlockAt=now+180;
+      manualSourceKey=playback.key;
       applyCandidate(playback.candidateIndex+1);
     }
 
+    let sourceClickTimer=0,sourceHoldTimer=0,sourceHoldUsed=false,rematchOperation=0,rematchPending=null;
+    const rejectedMatches=new Map();
+    function matchMemoryKey(source){return playback.key+'|'+Math.round(playback.durationMs/1000)+'|'+source;}
+    function readMatchMemories(){
+      try{return JSON.parse(localStorage.getItem('lyric-match-memory')||'[]').filter(x=>Date.now()-x.at<14*86400000&&x.candidate&&isUsableLyricPayload(x.candidate.lyrics));}catch(_){return [];}
+    }
+    function rememberMatch(source,candidate){
+      let entries=readMatchMemories().filter(x=>x.key!==matchMemoryKey(source));
+      if(candidate)entries.push({key:matchMemoryKey(source),at:Date.now(),candidate:{...candidate,alternatives:[]}});
+      while(entries.length>32||JSON.stringify(entries).length>262144)entries.shift();
+      try{localStorage.setItem('lyric-match-memory',JSON.stringify(entries));}catch(_){}
+    }
+    function matchNotice(text){
+      let notice=document.getElementById('match-notice');
+      if(!notice){notice=document.createElement('div');notice.id='match-notice';notice.setAttribute('role','status');notice.setAttribute('aria-live','polite');document.body.appendChild(notice);}
+      notice.textContent=text;clearTimeout(notice.hideTimer);
+      requestAnimationFrame(()=>notice.classList.add('visible'));
+      notice.hideTimer=setTimeout(()=>notice.classList.remove('visible'),2800);
+    }
+    function rematchCurrentSource(reset=false){
+      if(rematchPending){matchNotice('正在重新匹配，请稍候');return;}
+      const candidate=playback.candidates[playback.candidateIndex];
+      if(!candidate||!window.LobstaNativeLyrics?.rematchLyrics)return;
+      const key=matchMemoryKey(candidate.source);
+      if(reset){rememberMatch(candidate.source,null);rejectedMatches.delete(key);}
+      const excluded=reset?[]:(rejectedMatches.get(key)||[]);
+      if(!reset&&candidate.recordId&&!excluded.includes(candidate.recordId))excluded.push(candidate.recordId);
+      if(excluded.length>=32){matchNotice('已尝试多个版本，可长按恢复自动匹配');return;}
+      rejectedMatches.set(key,excluded);
+      if(rejectedMatches.size>32)rejectedMatches.delete(rejectedMatches.keys().next().value);
+      const operation=++rematchOperation;
+      rematchPending={operation,key:playback.key,source:candidate.source,reset};
+      rematchPending.timer=setTimeout(()=>{if(rematchPending?.operation===operation){rematchPending=null;matchNotice('重新匹配超时，已保留当前歌词');}},30000);
+      matchNotice(reset?'正在恢复自动匹配':'正在重新匹配此歌词源');
+      window.LobstaNativeLyrics.rematchLyrics(playback.track,playback.artist,playback.album||'',playback.durationMs,candidate.source,JSON.stringify(excluded),playback.requestId,operation);
+    }
+    function receiveRematch(requestId,operation,data){
+      const pending=rematchPending;
+      if(!pending||pending.operation!==operation)return;
+      clearTimeout(pending.timer);rematchPending=null;
+      if(requestId!==playback.requestId||pending.key!==playback.key)return;
+      if(data.error||!isUsableLyricPayload(data.lyrics)){matchNotice(data.error||'没有找到更合适的版本');return;}
+      const index=playback.candidates.findIndex(x=>x.source===pending.source);
+      if(index<0)return;
+      playback.candidates[index]=data;
+      if(!pending.reset)rememberMatch(pending.source,data);
+      manualSourceKey=playback.key;applyCandidate(index);
+      matchNotice(pending.reset?'已恢复自动匹配':'已切换版本，并记住此次选择');
+    }
+    function showMatchMenu(){
+      document.getElementById('match-menu')?.remove();
+      const menu=document.createElement('div');menu.id='match-menu';
+      const panel=document.createElement('div');panel.className='match-panel';panel.setAttribute('role','dialog');panel.setAttribute('aria-label','歌词匹配');
+      const title=document.createElement('h3');title.textContent='歌词匹配';panel.appendChild(title);
+      const hint=document.createElement('p');hint.textContent='恢复后，将清除此歌曲当前歌词源的手动选择。其他歌曲不受影响。';panel.appendChild(hint);
+      const dismiss=()=>{menu.classList.remove('visible');menu.style.pointerEvents='none';setTimeout(()=>menu.remove(),220);};
+      for(const [label,action] of [['恢复自动匹配',()=>rematchCurrentSource(true)],['保留当前选择',()=>{}]]){const button=document.createElement('button');button.textContent=label;button.onclick=()=>{dismiss();action();};panel.appendChild(button);}
+      menu.onclick=e=>{if(e.target===menu)dismiss();};menu.appendChild(panel);document.body.appendChild(menu);requestAnimationFrame(()=>menu.classList.add('visible'));
+    }
+    ui.chipsTrack.addEventListener('pointerdown',event=>{if(event.target.closest('.source-chip')){sourceHoldUsed=false;sourceHoldTimer=setTimeout(()=>{sourceHoldUsed=true;clearTimeout(sourceClickTimer);sourceClickTimer=0;showMatchMenu();},600);}});
+    ['pointerup','pointercancel','pointerleave'].forEach(type=>ui.chipsTrack.addEventListener(type,()=>clearTimeout(sourceHoldTimer)));
+    ui.chipsTrack.addEventListener('contextmenu',event=>{if(event.target.closest('.source-chip'))event.preventDefault();});
     ui.chipsTrack.addEventListener('click', event => {
-      if (event.target.closest('.source-chip')) cycleLyricsSource();
+      if (event.target.closest('.source-chip')) {
+        if(sourceHoldUsed){sourceHoldUsed=false;return;}
+        if(sourceClickTimer){clearTimeout(sourceClickTimer);sourceClickTimer=0;rematchCurrentSource();}
+        else sourceClickTimer=setTimeout(()=>{sourceClickTimer=0;cycleLyricsSource();},250);
+      }
       if (event.target.closest('[data-supplement]')||event.target.id==='supplement-chip') {
         if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.supplementSettings)window.LobstaNativeLyrics.supplementSettings();
       }
@@ -1376,6 +1531,7 @@
       infoMarqueeWidth=viewportWidth;
       if(infoMarqueeFrame)cancelAnimationFrame(infoMarqueeFrame);
       track.classList.remove('marquee');
+      viewport.classList.remove('is-scrolling');
       track.style.removeProperty('--chips-shift');
       track.style.removeProperty('--chips-duration');
       track.querySelectorAll('.chips-copy').forEach(node=>node.remove());
@@ -1384,6 +1540,7 @@
         if(!viewport.clientWidth)return;
         const primaryWidth=Math.ceil(primary.getBoundingClientRect().width);
         if(primaryWidth<=viewport.clientWidth+3)return;
+        viewport.classList.add('is-scrolling');
         const copy=primary.cloneNode(true);
         copy.removeAttribute('id');
         copy.classList.add('chips-copy');
@@ -1610,19 +1767,26 @@
       }
     }
 
-    function frame() {
+    let lastProgressPaint=0;
+    function frame(now) {
       const position = currentPosition();
       const duration = playback.durationMs;
-      if(!progressSeeking)ui.current.textContent = formatTime(position);
-      ui.duration.textContent = formatTime(duration);
-      if(!progressSeeking)ui.progress.style.width = (duration > 0 ? Math.min(100,position/duration*100) : 0) + '%';
+      const playing=playback.state==='playing';
+      const progressInterval=playing?100:500;
+      if(!lastProgressPaint||now-lastProgressPaint>=progressInterval){
+        if(!progressSeeking)ui.current.textContent = formatTime(position);
+        ui.duration.textContent = formatTime(duration);
+        if(!progressSeeking)ui.progress.style.width = (duration > 0 ? Math.min(100,position/duration*100) : 0) + '%';
+        lastProgressPaint=now;
+      }
       const lyricPos=lyricPosition();
       if(!lyricsTrackingSuspended){
         if(isPlainLyrics())updatePlainLyricsScroll(false);
-        else if (playback.state === 'playing') updateActiveLine(lyricPos, false);
+        else if(playing)updateActiveLine(lyricPos,false);
         updateWordProgress(lyricPos);
       }
-      requestAnimationFrame(frame);
+      if(playing)requestAnimationFrame(frame);
+      else setTimeout(()=>requestAnimationFrame(frame),220);
     }
 
     const headerMarqueeFrames = new WeakMap();
@@ -1701,6 +1865,7 @@
     });
 
     window.LobstaOverlay = {
+      receiveRematch,
       receiveSupplement,
       refreshSupplement() {
         if(playback.candidates.length)applyCandidate(playback.candidateIndex);
@@ -1723,7 +1888,7 @@
       },
       setTranslationMode(value) {
         translationMode=['original','bilingual','translated'].includes(value)?value:'bilingual';
-        if(playback.candidates.length)applyCandidate(playback.candidateIndex);
+        if(playback.candidates.length)applyCandidate(preferredCandidateIndex());
       },
       setHorizontalLayout(value) {
         document.body.classList.toggle('horizontal-layout', !!value);
@@ -1737,11 +1902,12 @@
         recenterAfterLayout();
       },
       setBackgroundMode(value) {
-        backgroundMode = value === 'high' ? 'high' : value === 'low' ? 'low' : 'transparent';
+        backgroundMode = value === 'high' ? 'high' : value === 'medium' ? 'medium' : value === 'low' ? 'low' : 'transparent';
         document.body.classList.toggle('background-transparent', backgroundMode === 'transparent');
         document.body.classList.toggle('background-low', backgroundMode === 'low');
+        document.body.classList.toggle('background-medium', backgroundMode === 'medium');
         document.body.classList.toggle('background-high', backgroundMode === 'high');
-        if(backgroundMode==='high')ensureFluidRenderer();
+        if(backgroundMode==='medium'||backgroundMode==='high')ensureFluidRenderer();
         else if(fluidRenderer)fluidRenderer.stop();
       }
     };
@@ -1830,18 +1996,28 @@
       const resolution=gl.getUniformLocation(program,'u_resolution'),time=gl.getUniformLocation(program,'u_time'),colors=gl.getUniformLocation(program,'u_colors');
       function resize(){canvas.width=Math.max(1,innerWidth/2);canvas.height=Math.max(1,innerHeight/2);gl.viewport(0,0,canvas.width,canvas.height);gl.uniform2f(resolution,canvas.width,canvas.height);}
       addEventListener('resize',resize);resize();const started=performance.now();
-      let drawRequest=0;
+      let drawRequest=0,drawTimer=0;
+      function scheduleDraw(){
+        if(backgroundMode!=='medium'&&backgroundMode!=='high')return;
+        const playing=playback.state==='playing';
+        const targetFps=backgroundMode==='medium'?(playing?30:8):(playing?0:15);
+        if(targetFps===0){drawRequest=requestAnimationFrame(draw);return;}
+        drawTimer=setTimeout(()=>{drawTimer=0;drawRequest=requestAnimationFrame(draw);},1000/targetFps);
+      }
       function draw(now){
         drawRequest=0;
-        if(backgroundMode!=='high')return;
+        if(backgroundMode!=='medium'&&backgroundMode!=='high')return;
         gl.uniform1f(time,(now-started)/1000);
         gl.uniform3fv(colors,new Float32Array(fluidPalette.flat()));
         gl.drawArrays(gl.TRIANGLES,0,6);
-        drawRequest=requestAnimationFrame(draw);
+        scheduleDraw();
       }
       fluidRenderer={
-        start(){if(!drawRequest&&backgroundMode==='high')drawRequest=requestAnimationFrame(draw);},
-        stop(){if(drawRequest){cancelAnimationFrame(drawRequest);drawRequest=0;}}
+        start(){if(!drawRequest&&!drawTimer&&(backgroundMode==='medium'||backgroundMode==='high'))scheduleDraw();},
+        stop(){
+          if(drawRequest){cancelAnimationFrame(drawRequest);drawRequest=0;}
+          if(drawTimer){clearTimeout(drawTimer);drawTimer=0;}
+        }
       };
       fluidRenderer.start();
     }

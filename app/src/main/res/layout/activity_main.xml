@@ -189,7 +189,7 @@
                 android:layout_marginTop="10dp"
                 android:gravity="center"
                 android:lineSpacingExtra="1dp"
-                android:text="本地实时读取 · 直连多源歌词 · 展开态点“歌词源”可切换"
+                android:text="歌词源：单击切换，双击重新匹配并记忆，长按恢复自动；收起按钮会自动淡出，点悬浮窗唤出"
                 android:textColor="#747C8E"
                 android:textSize="10sp" />
         </LinearLayout>
@@ -512,6 +512,16 @@
                     android:layout_weight="1"
                     android:gravity="center"
                     android:text="低负载"
+                    android:textColor="#9DA4B5"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/background_mode_medium"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="中负载"
                     android:textColor="#9DA4B5"
                     android:textSize="12sp" />
 

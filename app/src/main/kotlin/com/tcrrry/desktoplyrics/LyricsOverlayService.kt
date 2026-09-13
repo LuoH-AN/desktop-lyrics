@@ -90,6 +90,19 @@ class LyricsOverlayService : Service() {
     private var overlayWebHost: ViewGroup? = null
     private var singleTap: Runnable? = null
     private var compact = false
+    private val hideCompactControls = Runnable {
+        if (compact) chromeBar?.animate()?.alpha(0f)?.setDuration(350)?.withEndAction {
+            if (compact && chromeBar?.alpha == 0f) chromeBar?.visibility = View.INVISIBLE
+        }?.start()
+    }
+
+    private fun revealCompactControls(scheduleHide: Boolean = true) {
+        mainHandler.removeCallbacks(hideCompactControls)
+        chromeBar?.animate()?.cancel()
+        chromeBar?.visibility = View.VISIBLE
+        chromeBar?.animate()?.alpha(1f)?.setDuration(180)?.start()
+        if (compact && scheduleHide) mainHandler.postDelayed(hideCompactControls, 2500L)
+    }
     private var overlayRotated = false
     private var backgroundMode = BACKGROUND_DEFAULT
     private var fontScalePercent = FONT_SCALE_DEFAULT_PERCENT
@@ -439,6 +452,28 @@ class LyricsOverlayService : Service() {
         }
 
         @JavascriptInterface
+        fun rematchLyrics(track: String, artist: String, album: String, durationMs: Double,
+                          source: String, excludedJson: String, requestId: Int, operationId: Int) {
+            if (requestId != latestLyricsRequestId || track.isBlank() || excludedJson.length > 4096) return
+            lyricsScope.launch {
+                val payload = try {
+                    val array = org.json.JSONArray(excludedJson)
+                    val excluded = (0 until minOf(array.length(), 32)).map { array.optString(it) }.toSet()
+                    val result = lyricsRepository.rematch(source, track, artist, album,
+                        durationMs.takeIf { it.isFinite() && it > 0 }?.toLong() ?: 0L, excluded)
+                    result?.toJson() ?: JSONObject().put("error", "没有找到更合适的版本，已保留当前歌词")
+                } catch (error: Exception) {
+                    val cooling = error.message.orEmpty().contains("cool", ignoreCase = true)
+                    JSONObject().put("error", if (cooling) "此歌词源暂时限流或不可用，请稍后重试" else "重新匹配失败，已保留当前歌词")
+                }
+                mainHandler.post {
+                    if (requestId == latestLyricsRequestId && webReady) webView?.evaluateJavascript(
+                        "window.LobstaOverlay && window.LobstaOverlay.receiveRematch($requestId,$operationId,$payload);", null)
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun requestLyrics(
             track: String,
             artist: String,
@@ -458,7 +493,10 @@ class LyricsOverlayService : Service() {
                     track,
                     artist,
                     album,
-                    durationMs.takeIf { it.isFinite() && it > 0 }?.toLong() ?: 0L
+                    durationMs.takeIf { it.isFinite() && it > 0 }?.toLong() ?: 0L,
+                    onPartial = { partial ->
+                        if (requestId == latestLyricsRequestId) deliverLyricsResult(requestId, partial)
+                    }
                 )
                 if (requestId != latestLyricsRequestId) {
                     coverLookup?.cancel()
@@ -731,6 +769,10 @@ class LyricsOverlayService : Service() {
 
             override fun onTouch(view: View, event: MotionEvent): Boolean {
                 val lp = windowParams ?: return false
+                if (compact) {
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN) revealCompactControls(false)
+                    if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) revealCompactControls()
+                }
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         downRawX = event.rawX
@@ -795,6 +837,7 @@ class LyricsOverlayService : Service() {
 
             override fun onTouch(view: View, event: MotionEvent): Boolean {
                 val lp = windowParams ?: return false
+                if (compact) revealCompactControls(event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL)
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         downRawX = event.rawX
@@ -1362,6 +1405,7 @@ class LyricsOverlayService : Service() {
     private fun normalizedBackgroundMode(value: String?): String = when (value) {
         BACKGROUND_TRANSPARENT -> BACKGROUND_TRANSPARENT
         BACKGROUND_LOW -> BACKGROUND_LOW
+        BACKGROUND_MEDIUM -> BACKGROUND_MEDIUM
         BACKGROUND_HIGH -> BACKGROUND_HIGH
         else -> BACKGROUND_DEFAULT
     }
@@ -1382,6 +1426,7 @@ class LyricsOverlayService : Service() {
 
     private fun updateControlLayout(isCompact: Boolean) {
         val chrome = chromeBar ?: return
+        revealCompactControls()
         chrome.orientation = if (isCompact) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         chrome.gravity = Gravity.CENTER
         scaleButton?.let {
@@ -1758,6 +1803,7 @@ class LyricsOverlayService : Service() {
         private const val PREF_OVERLAY_ROTATED = "overlay_rotated_v1"
         const val BACKGROUND_TRANSPARENT = "transparent"
         const val BACKGROUND_LOW = "low"
+        const val BACKGROUND_MEDIUM = "medium"
         const val BACKGROUND_HIGH = "high"
         const val BACKGROUND_DEFAULT = BACKGROUND_HIGH
         const val FONT_SCALE_MIN_PERCENT = 35

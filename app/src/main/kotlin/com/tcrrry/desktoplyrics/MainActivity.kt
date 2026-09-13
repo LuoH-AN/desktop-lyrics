@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvRuntimeBadge: TextView
     private lateinit var backgroundModeTransparent: TextView
     private lateinit var backgroundModeLow: TextView
+    private lateinit var backgroundModeMedium: TextView
     private lateinit var backgroundModeHigh: TextView
     private lateinit var seekFontSize: SeekBar
     private lateinit var fontSizeValue: TextView
@@ -74,6 +75,7 @@ class MainActivity : AppCompatActivity() {
         tvRuntimeBadge = findViewById(R.id.tv_runtime_badge)
         backgroundModeTransparent = findViewById(R.id.background_mode_transparent)
         backgroundModeLow = findViewById(R.id.background_mode_low)
+        backgroundModeMedium = findViewById(R.id.background_mode_medium)
         backgroundModeHigh = findViewById(R.id.background_mode_high)
         seekFontSize = findViewById(R.id.seek_font_size)
         fontSizeValue = findViewById(R.id.font_size_value)
@@ -138,6 +140,9 @@ class MainActivity : AppCompatActivity() {
         }
         backgroundModeLow.setOnClickListener {
             setBackgroundMode(LyricsOverlayService.BACKGROUND_LOW)
+        }
+        backgroundModeMedium.setOnClickListener {
+            setBackgroundMode(LyricsOverlayService.BACKGROUND_MEDIUM)
         }
         backgroundModeHigh.setOnClickListener {
             setBackgroundMode(LyricsOverlayService.BACKGROUND_HIGH)
@@ -240,6 +245,7 @@ class MainActivity : AppCompatActivity() {
     private fun setBackgroundMode(mode: String) {
         val normalized = when (mode) {
             LyricsOverlayService.BACKGROUND_LOW -> LyricsOverlayService.BACKGROUND_LOW
+            LyricsOverlayService.BACKGROUND_MEDIUM -> LyricsOverlayService.BACKGROUND_MEDIUM
             LyricsOverlayService.BACKGROUND_HIGH -> LyricsOverlayService.BACKGROUND_HIGH
             else -> LyricsOverlayService.BACKGROUND_TRANSPARENT
         }
@@ -319,12 +325,14 @@ class MainActivity : AppCompatActivity() {
         listOf(
             backgroundModeTransparent to LyricsOverlayService.BACKGROUND_TRANSPARENT,
             backgroundModeLow to LyricsOverlayService.BACKGROUND_LOW,
+            backgroundModeMedium to LyricsOverlayService.BACKGROUND_MEDIUM,
             backgroundModeHigh to LyricsOverlayService.BACKGROUND_HIGH
         ).forEach { (option, mode) ->
             val selected = selectedMode == mode || (
                 selectedMode !in setOf(
                     LyricsOverlayService.BACKGROUND_TRANSPARENT,
                     LyricsOverlayService.BACKGROUND_LOW,
+                    LyricsOverlayService.BACKGROUND_MEDIUM,
                     LyricsOverlayService.BACKGROUND_HIGH
                 ) && mode == LyricsOverlayService.BACKGROUND_DEFAULT
             )
