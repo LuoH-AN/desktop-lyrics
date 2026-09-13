@@ -34,6 +34,8 @@ class DirectLyricsRepository {
         val cover: String = "",
         val source: String = "",
         val recordId: String = "",
+        val title: String = "",
+        val artist: String = "",
         val score: Int = 0,
         val alternatives: List<Result> = emptyList()
     ) {
@@ -45,6 +47,8 @@ class DirectLyricsRepository {
             .put("cover", cover)
             .put("source", source)
             .put("recordId", recordId)
+            .put("title", title)
+            .put("artist", artist)
             .put("matchScore", score)
 
         fun toJson(): JSONObject = candidateJson().put(
@@ -71,7 +75,7 @@ class DirectLyricsRepository {
 
     fun rematch(source: String, track: String, artist: String, album: String,
                 durationMs: Long, excluded: Set<String>): Result? {
-        excludedRecords.set(excluded.take(32).toSet())
+        excludedRecords.set(excluded.toSet())
         try {
             fun query(title: String, singer: String): Result? = when (source) {
                 "QQ音乐" -> queryQqMusic(title, singer, true, durationMs)
@@ -163,21 +167,22 @@ class DirectLyricsRepository {
             }
         }
         val completion = ExecutorCompletionService<Result?>(executor)
-        val futures = listOf(
-            completion.submit(Callable {
+        val futures = listOfNotNull(
+            runCatching { completion.submit(Callable {
                 if ("LRCLIB" in sources) querySource("LRCLIB", track) { queryLrcLib(track, artist, expectedDurationMs) } else null
-            }),
-            completion.submit(Callable {
+            }) }.getOrNull(),
+            runCatching { completion.submit(Callable {
                 if ("QQ音乐" in sources) querySource("QQ", track) {
                     queryQqMusic(track, artist, includeLyrics = true, expectedDurationMs, remember)
                 } else null
-            }),
-            completion.submit(Callable {
+            }) }.getOrNull(),
+            runCatching { completion.submit(Callable {
                 if ("网易云音乐" in sources) querySource("NetEase", track) {
                     queryNetEase(track, artist, includeLyrics = true, expectedDurationMs, remember)
                 } else null
-            })
+            }) }.getOrNull()
         )
+        if (futures.isEmpty()) return Result()
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(LYRICS_DEADLINE_MS)
         val candidates = mutableListOf<Result>()
         var completed = 0
@@ -215,10 +220,15 @@ class DirectLyricsRepository {
 
     fun resolveCover(track: String, artist: String): String {
         val completion = ExecutorCompletionService<Result?>(executor)
-        val futures = listOf(
-            completion.submit(Callable { queryQqMusic(track, artist, includeLyrics = false) }),
-            completion.submit(Callable { queryNetEase(track, artist, includeLyrics = false) })
+        val futures = listOfNotNull(
+            runCatching {
+                completion.submit(Callable { queryQqMusic(track, artist, includeLyrics = false) })
+            }.getOrNull(),
+            runCatching {
+                completion.submit(Callable { queryNetEase(track, artist, includeLyrics = false) })
+            }.getOrNull()
         )
+        if (futures.isEmpty()) return ""
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(COVER_DEADLINE_MS)
         var best: Result? = null
 
@@ -294,7 +304,7 @@ class DirectLyricsRepository {
         var best: Result? = null
         for (broad in listOf(false, true)) {
         val requestUrl = if (broad) "https://lrclib.net/api/search?track_name=${encode(track)}" else url
-        val list = JSONArray(getText(requestUrl, mapOf("Accept" to "application/json", "User-Agent" to "DesktopLyrics/1.05")))
+        val list = JSONArray(getText(requestUrl, mapOf("Accept" to "application/json", "User-Agent" to "DesktopLyrics/1.06")))
         val aliases = if (broad && list.length() > 0) providerArtistAliases(artist) else setOf(normalize(artist))
         for (index in 0 until list.length()) {
             val item = list.optJSONObject(index) ?: continue
@@ -323,6 +333,8 @@ class DirectLyricsRepository {
                 durationMs = durationMs,
                 source = "LRCLIB",
                 recordId = item.optLong("id").toString(),
+                title = item.optString("trackName"),
+                artist = item.optString("artistName"),
                 score = score
             )
             if (best == null || result.score > best.score) best = result
@@ -416,6 +428,8 @@ class DirectLyricsRepository {
                         cover = cover,
                         source = "QQ音乐",
                         recordId = songMid,
+                        title = song.optString("songname"),
+                        artist = song.optJSONArray("singer").joinNames("name"),
                         score = score + 5
                     )
                 onCandidate(result)
@@ -441,6 +455,8 @@ class DirectLyricsRepository {
                     cover = cover,
                     source = "QQ音乐",
                     recordId = songMid,
+                    title = song.optString("songname"),
+                    artist = song.optJSONArray("singer").joinNames("name"),
                     score = score + 5
                 )
                 onCandidate(result)
@@ -654,6 +670,8 @@ class DirectLyricsRepository {
                     cover = cover,
                     source = "网易云音乐",
                     recordId = songId.toString(),
+                    title = song.optString("name"),
+                    artist = song.optJSONArray("artists").joinNames("name"),
                     score = score + 5
                 )
                 onCandidate(result)
@@ -881,12 +899,15 @@ class DirectLyricsRepository {
 
         // Handles provider-localized stage names and symbolic titles such as
         // "MIREI" -> "當山みれい" and "^^", without accepting arbitrary hits.
-        if (titleExact && resultIndex <= 8) {
+        if (titleExact && resultIndex <= 8 &&
+            (artistStrong || !(containsCjk(artist) && containsCjk(candidateArtist)))) {
             return 82 + durationBonus - resultIndex.coerceAtMost(8)
         }
         // Handles localized titles such as "Till I Know What Love Is" ->
         // "愛を知るまでは" when the artist, duration and top search rank agree.
-        if (artistStrong && resultIndex <= 2) {
+        if (artistStrong && resultIndex <= 2 &&
+            !(containsCjk(searchTrack) && containsCjk(candidateTrack)) &&
+            excludedRecords.get() == null) {
             return 84 + durationBonus - resultIndex
         }
         return 0
@@ -937,12 +958,11 @@ class DirectLyricsRepository {
         val titleExact = wantedTitle.isNotBlank() && wantedTitle == foundTitle
         val titleLatinSimilarity = latinSimilarity(track, candidateTrack)
         val artistLatinSimilarity = latinSimilarity(artist, candidateArtist)
-        val bothArtistsUseCjk = containsCjk(artist) && containsCjk(candidateArtist)
         val durationReliable = expectedDurationMs > 0L && candidateDurationMs > 0L &&
             kotlin.math.abs(expectedDurationMs - candidateDurationMs) <= 12_000L
 
         if (!durationReliable) return strict
-        if (titleExact && (artistLatinSimilarity >= 0.58 || bothArtistsUseCjk)) return 88 + durationBonus
+        if (titleExact && artistLatinSimilarity >= 0.58) return 88 + durationBonus
         if (titleLatinSimilarity >= 0.56 &&
             (normalize(artist) == normalize(candidateArtist) || artistLatinSimilarity >= 0.58)
         ) return 84 + durationBonus

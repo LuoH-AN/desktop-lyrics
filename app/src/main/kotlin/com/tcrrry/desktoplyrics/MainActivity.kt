@@ -1,20 +1,24 @@
 package com.tcrrry.desktoplyrics
 
+import android.app.Dialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.widget.Button
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -61,6 +65,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        findViewById<Button>(R.id.btn_manage_lyric_sources).setOnClickListener {
+            startActivity(Intent(this, LyricSourceManagerActivity::class.java))
+        }
         findViewById<Button>(R.id.btn_supplement_translation).setOnClickListener {
             startActivity(Intent(this, TranslationSettingsActivity::class.java))
         }
@@ -448,11 +455,21 @@ class MainActivity : AppCompatActivity() {
         }
         val normalized = selected.uppercase(java.util.Locale.ROOT)
         val isCustom = options.none { (_, color) -> color == normalized }
-        lyricColorCustom.text = "无级调色 · $normalized"
+        val customLabel = "无级调色 · $normalized"
+        lyricColorCustom.text = SpannableString(customLabel).apply {
+            val valueStart = customLabel.lastIndexOf(normalized)
+            val actualColor = runCatching { Color.parseColor(normalized) }.getOrDefault(Color.WHITE)
+            setSpan(
+                ForegroundColorSpan(actualColor),
+                valueStart,
+                customLabel.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
         lyricColorCustom.setBackgroundResource(
             if (isCustom) R.drawable.bg_ui_segment_selected else R.drawable.bg_ui_pill
         )
-        lyricColorCustom.setTextColor(Color.parseColor(if (isCustom) "#202331" else "#AEBBFF"))
+        lyricColorCustom.setTextColor(Color.parseColor("#F7F7FA"))
     }
 
     private fun showColorPickerDialog() {
@@ -506,19 +523,24 @@ class MainActivity : AppCompatActivity() {
         blue.setOnSeekBarChangeListener(listener)
         updatePreview()
 
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("无级调色")
-            .setView(picker)
-            .setNegativeButton("取消", null)
-            .setPositiveButton("应用", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                setLyricColor(selectedHex)
-                dialog.dismiss()
+        val dialog = Dialog(this).apply {
+            setContentView(picker)
+            window?.apply {
+                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                setDimAmount(.64f)
+                addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             }
         }
+        picker.findViewById<Button>(R.id.color_picker_cancel).setOnClickListener { dialog.dismiss() }
+        picker.findViewById<Button>(R.id.color_picker_apply).setOnClickListener {
+            setLyricColor(selectedHex)
+            dialog.dismiss()
+        }
         dialog.show()
+        dialog.window?.setLayout(
+            resources.displayMetrics.widthPixels - (36 * resources.displayMetrics.density).toInt(),
+            android.view.WindowManager.LayoutParams.WRAP_CONTENT
+        )
     }
 
     private fun updateSegmentOptions(options: List<Pair<TextView, String>>, selected: String) {
@@ -547,7 +569,7 @@ class MainActivity : AppCompatActivity() {
         btnOverlayPermission.text = if (overlayGranted) "✓ 悬浮窗权限" else "悬浮窗权限"
         btnOverlay.text = if (running) "关闭歌词悬浮窗" else "开启歌词悬浮窗"
         btnOverlay.backgroundTintList = android.content.res.ColorStateList.valueOf(
-            android.graphics.Color.parseColor(if (running) "#D85B65" else "#5D7CFF")
+            android.graphics.Color.parseColor(if (running) "#C92842" else "#FA2D48")
         )
 
         val permissionsReady = listenerGranted && overlayGranted
@@ -559,18 +581,18 @@ class MainActivity : AppCompatActivity() {
         tvRuntimeBadge.setTextColor(
             android.graphics.Color.parseColor(
                 when {
-                    running -> "#90F0C0"
-                    permissionsReady -> "#B8C5FF"
-                    else -> "#FFD18A"
+                    running -> "#FF7388"
+                    permissionsReady -> "#B8B8BE"
+                    else -> "#FF9DAA"
                 }
             )
         )
         tvRuntimeBadge.backgroundTintList = android.content.res.ColorStateList.valueOf(
             android.graphics.Color.parseColor(
                 when {
-                    running -> "#2638C98B"
-                    permissionsReady -> "#263E5FE0"
-                    else -> "#265F4723"
+                    running -> "#264F1721"
+                    permissionsReady -> "#262F2F34"
+                    else -> "#263A151C"
                 }
             )
         )

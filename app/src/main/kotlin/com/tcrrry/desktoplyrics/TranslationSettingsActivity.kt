@@ -107,7 +107,7 @@ class TranslationSettingsActivity : AppCompatActivity() {
     }
     private fun showStatus(message: String, success: Boolean = false) {
         status.text = message
-        status.setTextColor(if (success) Color.rgb(140, 232, 186) else Color.rgb(183, 193, 255))
+        status.setTextColor(if (success) Color.rgb(255, 138, 155) else Color.rgb(255, 115, 136))
         status.visibility = View.VISIBLE
         status.alpha = 0f
         status.translationY = dp(5).toFloat()
@@ -236,7 +236,7 @@ class TranslationSettingsActivity : AppCompatActivity() {
             setBackgroundResource(R.drawable.bg_ui_pill)
             layoutParams = LinearLayout.LayoutParams(-1, dp(50)).apply { bottomMargin = dp(8) }
             addView(apiProfileLabel, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(label("⌄", 19f).apply { setTextColor(Color.rgb(183,193,255)); setPadding(dp(8), 0, 0, dp(4)) })
+            addView(label("⌄", 19f).apply { setTextColor(Color.rgb(255,138,155)); setPadding(dp(8), 0, 0, dp(4)) })
             setOnClickListener { showApiProfileMenu() }
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
@@ -278,7 +278,7 @@ class TranslationSettingsActivity : AppCompatActivity() {
         downloadProgress = ProgressBar(this).apply {
             isIndeterminate = true
             visibility = View.GONE
-            indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.rgb(155, 174, 255))
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.rgb(250, 45, 72))
         }
         offlineBox.addView(downloadProgress, LinearLayout.LayoutParams(-1, dp(4)).apply { topMargin = dp(6) })
         search = field("搜索更多语言，例如法语、德语、西班牙语")

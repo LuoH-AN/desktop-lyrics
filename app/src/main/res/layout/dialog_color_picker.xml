@@ -2,125 +2,32 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:background="@drawable/bg_ui_card"
     android:orientation="vertical"
-    android:paddingStart="8dp"
-    android:paddingTop="8dp"
-    android:paddingEnd="8dp"
-    android:paddingBottom="4dp">
+    android:padding="18dp">
 
-    <TextView
-        android:id="@+id/color_picker_preview"
-        android:layout_width="match_parent"
-        android:layout_height="58dp"
-        android:fontFamily="sans-serif-medium"
-        android:gravity="center"
-        android:text="#FFFFFF"
-        android:textColor="#202331"
-        android:textSize="15sp" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="sans-serif-medium" android:text="无级调色" android:textColor="#FFFFFF" android:textSize="20sp" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="拖动 RGB 数值组合歌词颜色" android:textColor="#95868B" android:textSize="12sp" />
+    <TextView android:id="@+id/color_picker_preview" android:layout_width="match_parent" android:layout_height="58dp" android:layout_marginTop="14dp" android:fontFamily="sans-serif-medium" android:gravity="center" android:text="#FFFFFF" android:textColor="#202331" android:textSize="15sp" />
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:layout_width="28dp"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:text="R"
-            android:textColor="#FF8F95"
-            android:textStyle="bold" />
-
-        <SeekBar
-            android:id="@+id/seek_color_red"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="1"
-            android:max="255"
-            android:progressTint="#FF737B"
-            android:thumbTint="#FF737B" />
-
-        <TextView
-            android:id="@+id/color_red_value"
-            android:layout_width="38dp"
-            android:layout_height="wrap_content"
-            android:gravity="end"
-            android:text="255"
-            android:textColor="#C5C9D5" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:background="@drawable/bg_ui_panel" android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="10dp" android:paddingEnd="10dp">
+        <TextView android:layout_width="28dp" android:layout_height="wrap_content" android:gravity="center" android:text="R" android:textColor="#FF667A" android:textStyle="bold" />
+        <SeekBar android:id="@+id/seek_color_red" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:max="255" android:progressTint="#FA2D48" android:thumbTint="#FA2D48" />
+        <TextView android:id="@+id/color_red_value" android:layout_width="38dp" android:layout_height="wrap_content" android:gravity="end" android:text="255" android:textColor="#E3D7DA" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7dp" android:background="@drawable/bg_ui_panel" android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="10dp" android:paddingEnd="10dp">
+        <TextView android:layout_width="28dp" android:layout_height="wrap_content" android:gravity="center" android:text="G" android:textColor="#78DCA5" android:textStyle="bold" />
+        <SeekBar android:id="@+id/seek_color_green" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:max="255" android:progressTint="#62D596" android:thumbTint="#62D596" />
+        <TextView android:id="@+id/color_green_value" android:layout_width="38dp" android:layout_height="wrap_content" android:gravity="end" android:text="255" android:textColor="#E3D7DA" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7dp" android:background="@drawable/bg_ui_panel" android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="10dp" android:paddingEnd="10dp">
+        <TextView android:layout_width="28dp" android:layout_height="wrap_content" android:gravity="center" android:text="B" android:textColor="#8EB7FF" android:textStyle="bold" />
+        <SeekBar android:id="@+id/seek_color_blue" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1" android:max="255" android:progressTint="#78A8FF" android:thumbTint="#78A8FF" />
+        <TextView android:id="@+id/color_blue_value" android:layout_width="38dp" android:layout_height="wrap_content" android:gravity="end" android:text="255" android:textColor="#E3D7DA" />
     </LinearLayout>
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:layout_width="28dp"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:text="G"
-            android:textColor="#78DCA5"
-            android:textStyle="bold" />
-
-        <SeekBar
-            android:id="@+id/seek_color_green"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="1"
-            android:max="255"
-            android:progressTint="#62D596"
-            android:thumbTint="#62D596" />
-
-        <TextView
-            android:id="@+id/color_green_value"
-            android:layout_width="38dp"
-            android:layout_height="wrap_content"
-            android:gravity="end"
-            android:text="255"
-            android:textColor="#C5C9D5" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="38dp" android:layout_marginTop="14dp" android:orientation="horizontal">
+        <Button android:id="@+id/color_picker_cancel" style="@style/SettingsAction" android:layout_width="0dp" android:layout_height="38dp" android:layout_marginEnd="4dp" android:layout_weight="1" android:text="取消" />
+        <Button android:id="@+id/color_picker_apply" android:layout_width="0dp" android:layout_height="38dp" android:layout_marginStart="4dp" android:layout_weight="1" android:background="@drawable/bg_ui_primary_button" android:fontFamily="sans-serif-medium" android:stateListAnimator="@null" android:text="应用" android:textAllCaps="false" android:textColor="#FFFFFF" android:textSize="14sp" />
     </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:layout_width="28dp"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:text="B"
-            android:textColor="#8EB7FF"
-            android:textStyle="bold" />
-
-        <SeekBar
-            android:id="@+id/seek_color_blue"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="1"
-            android:max="255"
-            android:progressTint="#78A8FF"
-            android:thumbTint="#78A8FF" />
-
-        <TextView
-            android:id="@+id/color_blue_value"
-            android:layout_width="38dp"
-            android:layout_height="wrap_content"
-            android:gravity="end"
-            android:text="255"
-            android:textColor="#C5C9D5" />
-    </LinearLayout>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="5dp"
-        android:gravity="center"
-        android:text="RGB 每级 0–255，可组合全部颜色"
-        android:textColor="#777F91"
-        android:textSize="10sp" />
 </LinearLayout>

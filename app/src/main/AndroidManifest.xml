@@ -32,6 +32,7 @@
         <activity android:name=".TranslationSettingsActivity" android:exported="false" />
         <activity android:name=".ApiProfileManagerActivity" android:exported="false" />
         <activity android:name=".LyricOffsetMemoryActivity" android:exported="false" />
+        <activity android:name=".LyricSourceManagerActivity" android:exported="false" />
         <service
             android:name=".MediaListenerService"
             android:exported="true"

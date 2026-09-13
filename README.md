@@ -48,6 +48,8 @@ Android floating lyrics overlay with MediaSession playback detection, synchroniz
 - 悬浮窗开启期间保持屏幕常亮，关闭后自动恢复系统息屏策略
 - 歌词搜索会自动尝试多个候选，跳过空歌词、只有歌名/制作信息的平台占位内容和歌手不符的同名结果；支持纯符号歌名、跨文字标题及片头曲等附注精简，弱网下最长等待 10 秒
 - 歌词源胶囊支持单击切源、双击只在当前来源重新匹配下一候选并记忆、长按恢复自动匹配；失败时保留正在显示的歌词
+- 设置页提供歌词源管理：按歌曲合并 QQ 音乐、网易云和 LRCLIB 的选择记录，可搜索歌曲、预览各来源版本、指定结果、恢复初始匹配或清除全部匹配缓存
+- 设置界面采用纯黑底与红色强调，动态背景独立分组；歌词字号与偏移集中调节，歌词源和偏移记忆可并排管理
 
 ## 兼容性
 
@@ -116,7 +118,7 @@ Android floating lyrics overlay with MediaSession playback detection, synchroniz
 
 ## 项目信息
 
-- 当前正式版：`1.05`（versionCode 105）
+- 当前正式版：`1.06`（versionCode 106）
 - Android 包名：`com.tcrrry.desktoplyrics`
 - 作者：B站 `@Tcrrrry`
 

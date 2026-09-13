@@ -46,6 +46,8 @@ Watch on Bilibili: [Desktop Lyrics for Android — Apple Music / Spotify real-ti
 - Keeps the screen awake while the overlay is visible and releases that behavior when closed
 - Tries multiple candidates, rejects empty, title-only, credit-only, and provider-placeholder lyrics, supports symbol-only titles and cross-script aliases, and allows up to 10 seconds on slow networks
 - Tap the source pill to cycle providers, double-tap to rematch the current provider and remember the selected recording, or long-press to restore automatic matching; a failed rematch keeps the current lyrics
+- Manage remembered lyric choices by song, search the history, preview QQ Music, NetEase, and LRCLIB versions, choose a result, restore the initial match, or clear the complete matching cache
+- Refined settings layout with a pure-black background and red accent, a separate dynamic-background card, stacked font-size and timing-offset controls, and side-by-side source/offset managers
 
 ## Requirements and compatibility
 
@@ -96,7 +98,7 @@ To build a signed APK, copy `keystore.properties.example` to `keystore.propertie
 
 ## Project information
 
-- Current release: `1.05` (versionCode 105)
+- Current release: `1.06` (versionCode 106)
 - Android package: `com.tcrrry.desktoplyrics`
 - Author: Bilibili `@Tcrrrry`
 

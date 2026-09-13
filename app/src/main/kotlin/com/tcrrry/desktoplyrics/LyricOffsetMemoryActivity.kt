@@ -96,7 +96,7 @@ class LyricOffsetMemoryActivity : AppCompatActivity() {
                 setPadding(0, dp(8), 0, 0)
             }
             detail.addView(text(entry.source.ifBlank { "歌词源" }, 12f).apply {
-                setTextColor(Color.rgb(174, 187, 255))
+                setTextColor(Color.rgb(255, 138, 155))
             }, LinearLayout.LayoutParams(0, -2, 1f))
             detail.addView(text(formatOffset(entry.offsetMs), 14f).apply {
                 setTextColor(Color.WHITE)

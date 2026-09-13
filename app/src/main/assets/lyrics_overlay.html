@@ -45,7 +45,7 @@
     .match-panel button { width:100%; border:1px solid rgba(255,255,255,.18); border-radius:17px;
       padding:12px 10px; color:inherit; font:inherit; font-size:12px; font-weight:600;
       background:rgba(255,255,255,.12); transition:background .15s,transform .15s; }
-    .match-panel button:first-of-type { color:#292e46; background:linear-gradient(110deg,#f4f1ff,#cddaff); }
+    .match-panel button:first-of-type { color:#2b171b; background:linear-gradient(110deg,#fff1f3,#ff9dab); }
     .match-panel button:active { transform:scale(.97); }
     html, body { width:100%; height:100%; margin:0; overflow:hidden; }
     body {
@@ -152,7 +152,7 @@
     .meta-copy { min-width:0; }
     .eyebrow { display:flex; min-width:0; align-items:center; gap:7px; margin-bottom:4px; padding-right:112px; overflow:hidden; color:rgba(255,255,255,.68); font-size:9px; font-weight:720; letter-spacing:.1em; text-transform:uppercase; }
     .dot { flex:0 0 auto; width:6px; height:6px; border-radius:99px; background:#a5a8b0; }
-    body.playing .dot { background:#72f6a4; animation:pulse 1.7s ease-out infinite; }
+    body.playing .dot { background:#fa2d48; box-shadow:0 0 9px rgba(250,45,72,.58); animation:pulse 1.7s ease-out infinite; }
     @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 60% { opacity:.55; transform:scale(.78); } }
     #track { overflow:hidden; white-space:nowrap; font-size:17px; line-height:1.12; font-weight:830; letter-spacing:-.035em; text-shadow:none; }
     #state-viewport { flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap; }
@@ -1322,6 +1322,15 @@
     function receiveLyrics(requestId, data) {
       if (requestId !== playback.requestId || !playback.key) return;
       if (data && isUsableLyricPayload(data.lyrics)) {
+        // A transient rich-lyrics failure must not erase verified words for the same recording.
+        const prior=cachedLyrics(playback.key);
+        if(Array.isArray(data.alternatives)&&prior){
+          const previous=prior.alternatives||[];
+          data.alternatives=data.alternatives.map(c=>{
+            const old=previous.find(x=>x.source===c.source&&x.recordId&&x.recordId===c.recordId);
+            return old&&completeWordLyrics(old,parseLrc(old.lyrics)).length&&!completeWordLyrics(c,parseLrc(c.lyrics)).length?old:c;
+          });
+        }
         saveLyrics(playback.key, data);
         applyResolved(data, playback.key, requestId);
       } else if (!cachedLyrics(playback.key)) {
@@ -1370,12 +1379,19 @@
     }
 
     let manualSourceKey='';
+    let automaticCandidates=[];
     function applyResolved(data, key, requestId) {
       if (key !== playback.key || requestId !== playback.requestId) return;
       const supplied=Array.isArray(data.alternatives)&&data.alternatives.length?data.alternatives:[data];
+      automaticCandidates=supplied.filter(candidate=>candidate&&isUsableLyricPayload(candidate.lyrics));
       const candidates=supplied.filter(candidate=>candidate&&isUsableLyricPayload(candidate.lyrics)).map(candidate=>{
         const remembered=readMatchMemories().find(entry=>entry.key===matchMemoryKey(candidate.source));
-        return remembered?remembered.candidate:candidate;
+        if(!remembered||remembered.needsReview)return candidate;
+        const old=remembered.candidate;
+        if(old.recordId&&old.recordId===candidate.recordId&&
+            completeWordLyrics(candidate,parseLrc(candidate.lyrics)).length>
+            completeWordLyrics(old,parseLrc(old.lyrics)).length)return candidate;
+        return old;
       });
       const signature=lyricsCandidateSignature(candidates);
       if(signature&&signature===candidateSignature&&playback.candidates.length)return;
@@ -1429,13 +1445,42 @@
     const rejectedMatches=new Map();
     function matchMemoryKey(source){return playback.key+'|'+Math.round(playback.durationMs/1000)+'|'+source;}
     function readMatchMemories(){
-      try{return JSON.parse(localStorage.getItem('lyric-match-memory')||'[]').filter(x=>Date.now()-x.at<14*86400000&&x.candidate&&isUsableLyricPayload(x.candidate.lyrics));}catch(_){return [];}
+      try{
+        const native=window.LobstaNativeLyrics?.readMatchMemory?.();
+        const raw=native||localStorage.getItem('lyric-match-memory')||'[]';
+        const entries=JSON.parse(raw).filter(x=>x.candidate&&isUsableLyricPayload(x.candidate.lyrics)).map(x=>{
+          if(!x.title){const parts=x.key.split('|'),identity=parts.slice(0,-2).join('|').split('\u0000');
+            return {...x,title:identity[0],artist:identity[1]||'',source:x.candidate.source,duration:Number(parts.at(-2))*1000,needsReview:true};}
+          return x;
+        });
+        if(!native&&entries.length)writeMatchMemories(entries);
+        return entries;
+      }catch(_){return [];}
+    }
+    function writeMatchMemories(entries){
+      const value=JSON.stringify(entries);
+      if(window.LobstaNativeLyrics?.writeMatchMemory)window.LobstaNativeLyrics.writeMatchMemory(value);
+      else localStorage.setItem('lyric-match-memory',value);
     }
     function rememberMatch(source,candidate){
-      let entries=readMatchMemories().filter(x=>x.key!==matchMemoryKey(source));
-      if(candidate)entries.push({key:matchMemoryKey(source),at:Date.now(),candidate:{...candidate,alternatives:[]}});
-      while(entries.length>32||JSON.stringify(entries).length>262144)entries.shift();
-      try{localStorage.setItem('lyric-match-memory',JSON.stringify(entries));}catch(_){}
+      const key=matchMemoryKey(source),all=readMatchMemories(),old=all.find(x=>x.key===key);
+      let entries=all.filter(x=>x.key!==key);
+      if(candidate){
+        const original=old?.original||automaticCandidates.find(x=>x.source===source)||playback.candidates.find(x=>x.source===source);
+        const clean=x=>({...x,alternatives:[]});
+        const history=[original,...(old?.history||[]),candidate].filter(Boolean).map(clean)
+          .filter((x,i,a)=>a.findIndex(y=>(y.recordId||y.lyrics)===(x.recordId||x.lyrics))===i);
+        entries.push({key,at:Date.now(),title:playback.track,artist:playback.artist,album:playback.album||'',duration:playback.durationMs,source,
+          candidate:clean(candidate),original:original?clean(original):null,history});
+      }
+      try{writeMatchMemories(entries);}catch(_){}
+    }
+    function refreshMatchManagement(){
+      if(rematchPending){clearTimeout(rematchPending.timer);rematchPending=null;}
+      rejectedMatches.clear();
+      const entries=readMatchMemories();
+      playback.candidates=playback.candidates.map(c=>entries.find(x=>x.key===matchMemoryKey(c.source)&&!x.needsReview)?.candidate||automaticCandidates.find(x=>x.source===c.source)||c);
+      if(playback.candidates.length)applyCandidate(playback.candidateIndex);
     }
     function matchNotice(text){
       let notice=document.getElementById('match-notice');
@@ -1449,10 +1494,13 @@
       const candidate=playback.candidates[playback.candidateIndex];
       if(!candidate||!window.LobstaNativeLyrics?.rematchLyrics)return;
       const key=matchMemoryKey(candidate.source);
-      if(reset){rememberMatch(candidate.source,null);rejectedMatches.delete(key);}
+      if(reset){
+        const original=readMatchMemories().find(x=>x.key===key)?.original||automaticCandidates.find(x=>x.source===candidate.source);
+        rememberMatch(candidate.source,null);rejectedMatches.delete(key);
+        if(original){playback.candidates[playback.candidateIndex]=original;applyCandidate(playback.candidateIndex);matchNotice('已恢复原始匹配');return;}
+      }else rememberMatch(candidate.source,candidate);
       const excluded=reset?[]:(rejectedMatches.get(key)||[]);
       if(!reset&&candidate.recordId&&!excluded.includes(candidate.recordId))excluded.push(candidate.recordId);
-      if(excluded.length>=32){matchNotice('已尝试多个版本，可长按恢复自动匹配');return;}
       rejectedMatches.set(key,excluded);
       if(rejectedMatches.size>32)rejectedMatches.delete(rejectedMatches.keys().next().value);
       const operation=++rematchOperation;
@@ -1742,6 +1790,7 @@
         if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.cancelSupplement)window.LobstaNativeLyrics.cancelSupplement();
         supplementChip.style.display='none';
         playback.key = key;
+        automaticCandidates=[];
         playback.requestId++;
         playback.candidates = [];
         playback.candidateIndex = 0;
@@ -1865,6 +1914,7 @@
     });
 
     window.LobstaOverlay = {
+      refreshMatchManagement,
       receiveRematch,
       receiveSupplement,
       refreshSupplement() {

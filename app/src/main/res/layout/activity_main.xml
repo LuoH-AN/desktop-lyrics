@@ -49,7 +49,7 @@
                     android:paddingStart="10dp"
                     android:paddingEnd="10dp"
                     android:text="准备就绪"
-                    android:textColor="#8CE8BA"
+                    android:textColor="#FF7388"
                     android:textSize="10sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -177,21 +177,94 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="3dp"
                         android:lineSpacingExtra="1dp"
-                        android:text="单点切换标准 / 收起，双击进入全屏歌词，长按拖动自定义尺寸；展开态可将整个悬浮窗旋转 90°"
+                        android:text="单点切换标准 / 收起，双击进入全屏歌词，长按拖动自定义尺寸；展开态可旋转 90°。收起按钮会自动淡出，点悬浮窗唤出"
                         android:textColor="#989FAF"
                         android:textSize="11sp" />
                 </LinearLayout>
             </LinearLayout>
 
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_ui_panel"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="12dp">
+                <TextView
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:background="@drawable/bg_ui_resize_icon"
+                    android:gravity="center"
+                    android:text="≋"
+                    android:textColor="#202333"
+                    android:textSize="21sp"
+                    android:textStyle="bold" />
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="歌词源与匹配"
+                        android:textColor="#F8F8FA"
+                        android:textSize="14sp" />
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:lineSpacingExtra="1dp"
+                        android:text="单击切换歌词源，双击重新匹配并记忆，长按恢复自动；可在歌词源管理中预览和选择版本"
+                        android:textColor="#989FAF"
+                        android:textSize="11sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/background_section"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_ui_card"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="动态背景"
+                android:textColor="#F7F7FA"
+                android:textSize="18sp" />
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="在清晰度、透明感与耗电之间选择"
+                android:textColor="#7F8798"
+                android:textSize="11sp" />
+
+            <LinearLayout
+                android:id="@+id/background_mode_shell"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
                 android:layout_marginTop="10dp"
-                android:gravity="center"
-                android:lineSpacingExtra="1dp"
-                android:text="歌词源：单击切换，双击重新匹配并记忆，长按恢复自动；收起按钮会自动淡出，点悬浮窗唤出"
-                android:textColor="#747C8E"
-                android:textSize="10sp" />
+                android:background="@drawable/bg_ui_pill"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="4dp">
+
+                <TextView android:id="@+id/background_mode_transparent" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:text="透明" android:textColor="#9DA4B5" android:textSize="12sp" />
+                <TextView android:id="@+id/background_mode_low" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:text="低负载" android:textColor="#9DA4B5" android:textSize="12sp" />
+                <TextView android:id="@+id/background_mode_medium" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:text="中负载" android:textColor="#9DA4B5" android:textSize="12sp" />
+                <TextView android:id="@+id/background_mode_high" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@drawable/bg_ui_segment_selected" android:fontFamily="sans-serif-medium" android:gravity="center" android:text="高负载" android:textColor="#202331" android:textSize="12sp" />
+            </LinearLayout>
         </LinearLayout>
 
         <LinearLayout
@@ -214,7 +287,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:fontFamily="sans-serif-medium"
-                    android:text="显示与交互"
+                    android:text="歌词设置"
                     android:textColor="#FFFFFF"
                     android:textSize="18sp" />
             </LinearLayout>
@@ -240,7 +313,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="100%"
-                    android:textColor="#AEBBFF"
+                    android:textColor="#F7F7FA"
                     android:textSize="11sp" />
             </LinearLayout>
 
@@ -252,7 +325,7 @@
                 android:max="115"
                 android:progress="65"
                 android:progressBackgroundTint="#39404F"
-                android:progressTint="#9BAEFF"
+                android:progressTint="#FA2D48"
                 android:splitTrack="false"
                 android:thumbTint="#F7F7FA" />
 
@@ -275,6 +348,76 @@
                     android:text="大"
                     android:textColor="#767E90"
                     android:textSize="10sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="歌词偏移"
+                    android:textColor="#F7F7FA"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/lyric_offset_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="+0.0s"
+                    android:textColor="#F7F7FA"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/seek_lyric_offset"
+                android:layout_width="match_parent"
+                android:layout_height="32dp"
+                android:layout_marginTop="2dp"
+                android:max="100"
+                android:progress="50"
+                android:progressBackgroundTint="#39404F"
+                android:progressTint="#FA2D48"
+                android:splitTrack="false"
+                android:thumbTint="#F7F7FA" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="当前偏移会按歌曲和歌词源分别记忆"
+                android:textColor="#697184"
+                android:textSize="9sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:layout_marginTop="7dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_manage_lyric_sources"
+                    style="@style/SettingsAction"
+                    android:layout_width="0dp"
+                    android:layout_height="38dp"
+                    android:layout_marginEnd="4dp"
+                    android:layout_weight="1"
+                    android:text="歌词源管理" />
+
+                <Button
+                    android:id="@+id/btn_manage_lyric_offsets"
+                    style="@style/SettingsAction"
+                    android:layout_width="0dp"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="4dp"
+                    android:layout_weight="1"
+                    android:text="偏移记忆管理" />
             </LinearLayout>
 
             <TextView
@@ -345,8 +488,8 @@
                 android:fontFamily="sans-serif-medium"
                 android:gravity="center"
                 android:text="无级调色 · #FFFFFF"
-                android:textColor="#AEBBFF"
-                android:textSize="11sp" />
+                android:textColor="#F7F7FA"
+                android:textSize="14sp" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -400,150 +543,20 @@
 
             <Button
                 android:id="@+id/btn_supplement_translation"
+                style="@style/SettingsAction"
                 android:layout_width="match_parent"
-                android:layout_height="44dp"
+                android:layout_height="38dp"
                 android:layout_marginTop="7dp"
                 android:background="@drawable/bg_ui_pill"
                 android:text="补充翻译 · 语言包与 API"
                 android:textColor="#F7F7FA" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:fontFamily="sans-serif-medium"
-                    android:text="歌词偏移"
-                    android:textColor="#F7F7FA"
-                    android:textSize="14sp" />
-
-                <TextView
-                    android:id="@+id/lyric_offset_value"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="+0.0s"
-                    android:textColor="#AEBBFF"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <SeekBar
-                android:id="@+id/seek_lyric_offset"
-                android:layout_width="match_parent"
-                android:layout_height="32dp"
-                android:layout_marginTop="2dp"
-                android:max="100"
-                android:progress="50"
-                android:progressBackgroundTint="#39404F"
-                android:progressTint="#9BAEFF"
-                android:splitTrack="false"
-                android:thumbTint="#F7F7FA" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="当前偏移会按歌曲和歌词源分别记忆"
-                android:textColor="#697184"
-                android:textSize="9sp" />
-
-            <Button
-                android:id="@+id/btn_manage_lyric_offsets"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:layout_marginTop="7dp"
-                android:background="@drawable/bg_ui_pill"
-                android:text="管理偏移记忆"
-                android:textColor="#AEBBFF"
-                android:textSize="11sp" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginBottom="12dp"
-                android:background="#18FFFFFF" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-medium"
-                android:text="动态背景"
-                android:textColor="#F7F7FA"
-                android:textSize="14sp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:text="在清晰度、透明感与耗电之间选择"
-                android:textColor="#7F8798"
-                android:textSize="11sp" />
-
-            <LinearLayout
-                android:id="@+id/background_mode_shell"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_ui_pill"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="4dp">
-
-                <TextView
-                    android:id="@+id/background_mode_transparent"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:text="透明"
-                    android:textColor="#9DA4B5"
-                    android:textSize="12sp" />
-
-                <TextView
-                    android:id="@+id/background_mode_low"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:text="低负载"
-                    android:textColor="#9DA4B5"
-                    android:textSize="12sp" />
-
-                <TextView
-                    android:id="@+id/background_mode_medium"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:text="中负载"
-                    android:textColor="#9DA4B5"
-                    android:textSize="12sp" />
-
-                <TextView
-                    android:id="@+id/background_mode_high"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_ui_segment_selected"
-                    android:fontFamily="sans-serif-medium"
-                    android:gravity="center"
-                    android:text="高负载"
-                    android:textColor="#202331"
-                    android:textSize="12sp" />
-            </LinearLayout>
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:gravity="center"
-                android:text="字号、颜色、偏移、翻译与背景设置会实时应用"
+                android:text="字号、颜色、偏移与翻译设置会实时应用"
                 android:textColor="#626A7C"
                 android:textSize="10sp" />
         </LinearLayout>

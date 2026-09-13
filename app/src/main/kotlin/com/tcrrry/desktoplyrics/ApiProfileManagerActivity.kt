@@ -52,7 +52,7 @@ class ApiProfileManagerActivity : AppCompatActivity() {
     }
     private fun showStatus(message: String, success: Boolean = false) {
         status.text = message
-        status.setTextColor(if (success) Color.rgb(140,232,186) else Color.rgb(183,193,255))
+        status.setTextColor(if (success) Color.rgb(255,138,155) else Color.rgb(255,115,136))
         status.alpha = 0f; status.animate().alpha(1f).setDuration(180).start()
     }
 

@@ -180,6 +180,10 @@ class LyricsOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "com.tcrrry.desktoplyrics.REFRESH_MATCHES") {
+            webView?.evaluateJavascript("window.LobstaOverlay?.refreshMatchManagement();", null)
+            return START_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
             stopSelf()
             return START_NOT_STICKY
@@ -454,11 +458,11 @@ class LyricsOverlayService : Service() {
         @JavascriptInterface
         fun rematchLyrics(track: String, artist: String, album: String, durationMs: Double,
                           source: String, excludedJson: String, requestId: Int, operationId: Int) {
-            if (requestId != latestLyricsRequestId || track.isBlank() || excludedJson.length > 4096) return
+            if (requestId != latestLyricsRequestId || track.isBlank()) return
             lyricsScope.launch {
                 val payload = try {
                     val array = org.json.JSONArray(excludedJson)
-                    val excluded = (0 until minOf(array.length(), 32)).map { array.optString(it) }.toSet()
+                    val excluded = (0 until array.length()).map { array.optString(it) }.toSet()
                     val result = lyricsRepository.rematch(source, track, artist, album,
                         durationMs.takeIf { it.isFinite() && it > 0 }?.toLong() ?: 0L, excluded)
                     result?.toJson() ?: JSONObject().put("error", "没有找到更合适的版本，已保留当前歌词")
@@ -470,6 +474,16 @@ class LyricsOverlayService : Service() {
                     if (requestId == latestLyricsRequestId && webReady) webView?.evaluateJavascript(
                         "window.LobstaOverlay && window.LobstaOverlay.receiveRematch($requestId,$operationId,$payload);", null)
                 }
+            }
+        }
+
+        @JavascriptInterface
+        fun readMatchMemory(): String = prefs.getString("match_memory_v2", "").orEmpty()
+
+        @JavascriptInterface
+        fun writeMatchMemory(value: String) {
+            if (runCatching { org.json.JSONArray(value); true }.getOrDefault(false)) {
+                prefs.edit().putString("match_memory_v2", value).apply()
             }
         }
 
