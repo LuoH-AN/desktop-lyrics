@@ -107,6 +107,12 @@ class LyricsOverlayService : Service() {
     private var backgroundMode = BACKGROUND_DEFAULT
     private var fontScalePercent = FONT_SCALE_DEFAULT_PERCENT
     private var lyricColor = LYRIC_COLOR_DEFAULT
+    private var expandedBackgroundMode = BACKGROUND_DEFAULT
+    private var compactBackgroundMode = BACKGROUND_DEFAULT
+    private var expandedFontScalePercent = FONT_SCALE_DEFAULT_PERCENT
+    private var compactFontScalePercent = FONT_SCALE_DEFAULT_PERCENT
+    private var expandedLyricColor = LYRIC_COLOR_DEFAULT
+    private var compactLyricColor = LYRIC_COLOR_DEFAULT
     private var lyricOffsetMs = 0
     private var currentLyricIdentity = ""
     private var currentLyricSource = ""
@@ -163,13 +169,23 @@ class LyricsOverlayService : Service() {
         instance = this
         isRunning = true
         announceOverlayState()
-        backgroundMode = normalizedBackgroundMode(
+        expandedBackgroundMode = normalizedBackgroundMode(
             prefs.getString(PREF_BACKGROUND_MODE, BACKGROUND_DEFAULT)
         )
-        fontScalePercent = normalizedFontScale(
+        compactBackgroundMode = normalizedBackgroundMode(
+            prefs.getString(PREF_BACKGROUND_MODE_COMPACT, expandedBackgroundMode)
+        )
+        expandedFontScalePercent = normalizedFontScale(
             prefs.getInt(PREF_FONT_SCALE_PERCENT, FONT_SCALE_DEFAULT_PERCENT)
         )
-        lyricColor = normalizedLyricColor(prefs.getString(PREF_LYRIC_COLOR, LYRIC_COLOR_DEFAULT))
+        compactFontScalePercent = normalizedFontScale(
+            prefs.getInt(PREF_FONT_SCALE_COMPACT_PERCENT, expandedFontScalePercent)
+        )
+        expandedLyricColor = normalizedLyricColor(prefs.getString(PREF_LYRIC_COLOR, LYRIC_COLOR_DEFAULT))
+        compactLyricColor = normalizedLyricColor(
+            prefs.getString(PREF_LYRIC_COLOR_COMPACT, expandedLyricColor)
+        )
+        syncActiveVisualPreferences(false)
         lyricOffsetMs = prefs.getInt(PREF_LYRIC_OFFSET_MS, 0)
             .coerceIn(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
         translationMode = normalizedTranslationMode(
@@ -190,28 +206,55 @@ class LyricsOverlayService : Service() {
         }
 
         if (intent?.action == ACTION_SET_BACKGROUND) {
-            backgroundMode = normalizedBackgroundMode(
+            val targetCompact = intent.getBooleanExtra(EXTRA_TARGET_COMPACT, false)
+            val value = normalizedBackgroundMode(
                 intent.getStringExtra(EXTRA_BACKGROUND_MODE)
             )
-            prefs.edit().putString(PREF_BACKGROUND_MODE, backgroundMode).apply()
-            applyBackgroundMode()
+            if (targetCompact) compactBackgroundMode = value else expandedBackgroundMode = value
+            prefs.edit().putString(
+                if (targetCompact) PREF_BACKGROUND_MODE_COMPACT else PREF_BACKGROUND_MODE,
+                value
+            ).apply()
+            if (displayedVisualTargetIsCompact() == targetCompact) {
+                backgroundMode = value
+                applyBackgroundMode()
+            }
             if (overlayRoot != null) return START_STICKY
         }
 
         if (intent?.action == ACTION_SET_FONT_SCALE) {
+            val targetCompact = intent.getBooleanExtra(EXTRA_TARGET_COMPACT, false)
             val previousPercent = fontScalePercent
-            fontScalePercent = normalizedFontScale(
+            val value = normalizedFontScale(
                 intent.getIntExtra(EXTRA_FONT_SCALE_PERCENT, FONT_SCALE_DEFAULT_PERCENT)
             )
-            prefs.edit().putInt(PREF_FONT_SCALE_PERCENT, fontScalePercent).apply()
-            applyFontScale(previousPercent, adjustCompactHeight = true)
+            if (targetCompact) compactFontScalePercent = value else expandedFontScalePercent = value
+            prefs.edit().putInt(
+                if (targetCompact) PREF_FONT_SCALE_COMPACT_PERCENT else PREF_FONT_SCALE_PERCENT,
+                value
+            ).apply()
+            if (displayedVisualTargetIsCompact() == targetCompact) {
+                fontScalePercent = value
+                applyFontScale(
+                    previousPercent,
+                    adjustCompactHeight = targetCompact && fullscreenHost == null
+                )
+            }
             if (overlayRoot != null) return START_STICKY
         }
 
         if (intent?.action == ACTION_SET_LYRIC_COLOR) {
-            lyricColor = normalizedLyricColor(intent.getStringExtra(EXTRA_LYRIC_COLOR))
-            prefs.edit().putString(PREF_LYRIC_COLOR, lyricColor).apply()
-            applyLyricColor()
+            val targetCompact = intent.getBooleanExtra(EXTRA_TARGET_COMPACT, false)
+            val value = normalizedLyricColor(intent.getStringExtra(EXTRA_LYRIC_COLOR))
+            if (targetCompact) compactLyricColor = value else expandedLyricColor = value
+            prefs.edit().putString(
+                if (targetCompact) PREF_LYRIC_COLOR_COMPACT else PREF_LYRIC_COLOR,
+                value
+            ).apply()
+            if (displayedVisualTargetIsCompact() == targetCompact) {
+                lyricColor = value
+                applyLyricColor()
+            }
             if (overlayRoot != null) return START_STICKY
         }
 
@@ -623,10 +666,12 @@ class LyricsOverlayService : Service() {
         val storedCompactWidth = prefs.getInt(PREF_COMPACT_WIDTH, storedExpandedWidth)
         val wasCompact = prefs.getBoolean("compact", false)
         val storedNormalHeight = prefs.getInt("height", dp(520))
-        val compactMinimumHeight = dp(compactMinimumHeightDp(fontScalePercent))
+        syncActiveVisualPreferences(wasCompact)
+        val compactMinimumHeight = dp(compactMinimumHeightDp(compactFontScalePercent))
         val storedCompactHeight = prefs.getInt("compact_height_v3", max(dp(48), compactMinimumHeight))
         val activeStoredHeight = if (wasCompact) storedCompactHeight else storedNormalHeight
         compact = activeStoredHeight <= dp(COMPACT_MAX_HEIGHT_DP)
+        syncActiveVisualPreferences(compact)
         val normalHeightSource = if (!compact && wasCompact) activeStoredHeight else storedNormalHeight
         val compactHeightSource = if (compact && !wasCompact) activeStoredHeight else storedCompactHeight
         val normalSize = fittedLogicalOverlaySize(
@@ -677,20 +722,25 @@ class LyricsOverlayService : Service() {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
             x = prefs.getInt(
-                "x",
-                max(safeBounds.left, safeBounds.right - activeWindowSize.first - dp(12))
+                positionXPreferenceKey(compact),
+                prefs.getInt(
+                    "x",
+                    max(safeBounds.left, safeBounds.right - activeWindowSize.first - dp(12))
+                )
             ).coerceIn(
                 safeBounds.left,
                 max(safeBounds.left, safeBounds.right - activeWindowSize.first)
             )
-            y = prefs.getInt("y", dp(96))
-                .coerceIn(
+            y = prefs.getInt(
+                positionYPreferenceKey(compact),
+                prefs.getInt("y", dp(96))
+            ).coerceIn(
+                safeBounds.top,
+                max(
                     safeBounds.top,
-                    max(
-                        safeBounds.top,
-                        safeBounds.bottom - activeWindowSize.second
-                    )
+                    safeBounds.bottom - activeWindowSize.second
                 )
+            )
         }
         windowParams = params
 
@@ -807,7 +857,7 @@ class LyricsOverlayService : Service() {
                         return true
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        prefs.edit().putInt("x", lp.x).putInt("y", lp.y).apply()
+                        saveOverlayGeometry(compact, lp, saveSize = false)
                         return true
                     }
                 }
@@ -834,19 +884,7 @@ class LyricsOverlayService : Service() {
             }
 
             fun saveSize(lp: WindowManager.LayoutParams) {
-                val logicalSize = windowToLogicalSize(lp.width, lp.height, overlayRotated)
-                val edit = prefs.edit()
-                    .putInt("x", lp.x)
-                    .putInt("y", lp.y)
-                    .putBoolean("compact", compact)
-                if (compact) {
-                    edit.putInt(PREF_COMPACT_WIDTH, logicalSize.first)
-                    edit.putInt("compact_height_v3", logicalSize.second)
-                } else {
-                    edit.putInt("width", logicalSize.first)
-                    edit.putInt("height", logicalSize.second)
-                }
-                edit.apply()
+                saveOverlayGeometry(compact, lp, saveSize = true)
             }
 
             override fun onTouch(view: View, event: MotionEvent): Boolean {
@@ -1011,7 +1049,11 @@ class LyricsOverlayService : Service() {
         fullscreenHost = host
         overlayRoot?.visibility = View.GONE
         host.addView(player, FrameLayout.LayoutParams(-1, -1))
+        syncActiveVisualPreferences(false)
         player.evaluateJavascript("window.LobstaOverlay.setCompact(false);", null)
+        applyFontScale(fontScalePercent, adjustCompactHeight = false)
+        applyLyricColor()
+        applyBackgroundMode()
         updateFullscreenLayout()
         return true
     }
@@ -1028,7 +1070,11 @@ class LyricsOverlayService : Service() {
         webView?.let { player ->
             host.removeView(player)
             overlayWebHost?.addView(player, FrameLayout.LayoutParams(-1, -1))
+            syncActiveVisualPreferences(compact)
             player.evaluateJavascript("window.LobstaOverlay.setCompact($compact);", null)
+            applyFontScale(fontScalePercent, adjustCompactHeight = false)
+            applyLyricColor()
+            applyBackgroundMode()
         }
         fullscreenHost = null
         overlayWebHost = null
@@ -1196,6 +1242,7 @@ class LyricsOverlayService : Service() {
             .coerceIn(safe.top, max(safe.top, safe.bottom - lp.height))
         lastDisplayWidth = screenWidth
         lastDisplayHeight = screenHeight
+        saveOverlayGeometry(compact, lp, saveSize = true)
         applyOverlayRotationLayout()
         applyHorizontalWebLayout()
         windowManager.updateViewLayout(root, lp)
@@ -1256,6 +1303,8 @@ class LyricsOverlayService : Service() {
             .putInt("height", currentLogicalSize.second)
             .putInt("x", lp.x)
             .putInt("y", lp.y)
+            .putInt(positionXPreferenceKey(false), lp.x)
+            .putInt(positionYPreferenceKey(false), lp.y)
             .apply()
         applyOverlayRotationLayout()
         applyHorizontalWebLayout()
@@ -1264,15 +1313,20 @@ class LyricsOverlayService : Service() {
 
     private fun toggleCompact() {
         val nextCompact = !compact
+        val previousFontScalePercent = fontScalePercent
         val lp = windowParams ?: return
         val safe = currentSafeDisplayBounds()
+        val centerX = lp.x + lp.width / 2f
+        val centerY = lp.y + lp.height / 2f
         val currentLogicalSize = windowToLogicalSize(lp.width, lp.height, overlayRotated)
+        saveOverlayGeometry(compact, lp, saveSize = true)
         val desiredSize = if (nextCompact) {
             prefs.getInt(PREF_COMPACT_WIDTH, currentLogicalSize.first) to
                 prefs.getInt("compact_height_v3", dp(48))
         } else {
             prefs.getInt("width", currentLogicalSize.first) to prefs.getInt("height", dp(520))
         }
+        syncActiveVisualPreferences(nextCompact)
         val fittedLogicalSize = fittedLogicalOverlaySize(
             desiredSize.first,
             desiredSize.second,
@@ -1283,17 +1337,58 @@ class LyricsOverlayService : Service() {
         val fittedWindowSize = logicalToWindowSize(fittedLogicalSize, overlayRotated)
         lp.width = fittedWindowSize.first
         lp.height = fittedWindowSize.second
-        lp.x = lp.x.coerceIn(safe.left, max(safe.left, safe.right - lp.width))
+        val targetXKey = positionXPreferenceKey(nextCompact)
+        val targetYKey = positionYPreferenceKey(nextCompact)
+        lp.x = (if (prefs.contains(targetXKey)) prefs.getInt(targetXKey, lp.x)
+            else (centerX - lp.width / 2f).roundToInt())
+            .coerceIn(safe.left, max(safe.left, safe.right - lp.width))
+        lp.y = (if (prefs.contains(targetYKey)) prefs.getInt(targetYKey, lp.y)
+            else (centerY - lp.height / 2f).roundToInt())
+            .coerceIn(safe.top, max(safe.top, safe.bottom - lp.height))
+        fontScalePercent = previousFontScalePercent
         setCompactUi(nextCompact)
         applyOverlayRotationLayout()
         overlayRoot?.let { windowManager.updateViewLayout(it, lp) }
+        saveOverlayGeometry(nextCompact, lp, saveSize = true)
+    }
+
+    private fun positionXPreferenceKey(targetCompact: Boolean): String =
+        if (targetCompact) PREF_COMPACT_X else PREF_EXPANDED_X
+
+    private fun positionYPreferenceKey(targetCompact: Boolean): String =
+        if (targetCompact) PREF_COMPACT_Y else PREF_EXPANDED_Y
+
+    private fun saveOverlayGeometry(
+        targetCompact: Boolean,
+        lp: WindowManager.LayoutParams,
+        saveSize: Boolean
+    ) {
+        val editor = prefs.edit()
+            .putInt("x", lp.x)
+            .putInt("y", lp.y)
+            .putInt(positionXPreferenceKey(targetCompact), lp.x)
+            .putInt(positionYPreferenceKey(targetCompact), lp.y)
+            .putBoolean("compact", targetCompact)
+        if (saveSize) {
+            val logicalSize = windowToLogicalSize(lp.width, lp.height, overlayRotated)
+            if (targetCompact) {
+                editor.putInt(PREF_COMPACT_WIDTH, logicalSize.first)
+                    .putInt("compact_height_v3", logicalSize.second)
+            } else {
+                editor.putInt("width", logicalSize.first)
+                    .putInt("height", logicalSize.second)
+            }
+        }
+        editor.apply()
     }
 
     private fun setCompactUi(value: Boolean) {
+        val previousFontScalePercent = fontScalePercent
         if (compact != value) {
             closeBlockedUntilElapsedMs = SystemClock.elapsedRealtime() + CLOSE_GUARD_AFTER_TOGGLE_MS
         }
         compact = value
+        syncActiveVisualPreferences(compact)
         prefs.edit().putBoolean("compact", compact).apply()
         overlayContent?.background = overlayBackground(compact)
         updateControlLayout(compact)
@@ -1301,7 +1396,22 @@ class LyricsOverlayService : Service() {
             "window.LobstaOverlay && window.LobstaOverlay.setCompact($compact);",
             null
         )
+        // The target geometry has already been restored before this UI switch.
+        // Re-basing compact height from the other mode's font scale can shave a
+        // few pixels off a two-line compact layout and incorrectly collapse it
+        // to one line. Only an explicit compact-font setting change may resize it.
+        applyFontScale(previousFontScalePercent, adjustCompactHeight = false)
+        applyLyricColor()
+        applyBackgroundMode()
     }
+
+    private fun syncActiveVisualPreferences(targetCompact: Boolean) {
+        backgroundMode = if (targetCompact) compactBackgroundMode else expandedBackgroundMode
+        fontScalePercent = if (targetCompact) compactFontScalePercent else expandedFontScalePercent
+        lyricColor = if (targetCompact) compactLyricColor else expandedLyricColor
+    }
+
+    private fun displayedVisualTargetIsCompact(): Boolean = fullscreenHost == null && compact
 
     private fun applyBackgroundMode() {
         val encodedMode = JSONObject.quote(backgroundMode)
@@ -1801,19 +1911,27 @@ class LyricsOverlayService : Service() {
         const val EXTRA_BACKGROUND_MODE = "background_mode"
         const val EXTRA_FONT_SCALE_PERCENT = "font_scale_percent"
         const val EXTRA_LYRIC_COLOR = "lyric_color"
+        const val EXTRA_TARGET_COMPACT = "target_compact"
         const val EXTRA_LYRIC_OFFSET_MS = "lyric_offset_ms"
         const val EXTRA_LYRIC_OFFSET_MEMORY_KEY = "lyric_offset_memory_key"
         const val EXTRA_TRANSLATION_MODE = "translation_mode"
         const val EXTRA_RUNNING = "running"
         const val PREFS_NAME = "lyrics_overlay_prefs"
         const val PREF_BACKGROUND_MODE = "background_mode"
+        const val PREF_BACKGROUND_MODE_COMPACT = "background_mode_compact_v1"
         const val PREF_FONT_SCALE_PERCENT = "font_scale_percent"
+        const val PREF_FONT_SCALE_COMPACT_PERCENT = "font_scale_compact_percent_v1"
         const val PREF_LYRIC_COLOR = "lyric_color_v1"
+        const val PREF_LYRIC_COLOR_COMPACT = "lyric_color_compact_v1"
         const val PREF_LYRIC_OFFSET_MS = "lyric_offset_ms_v1"
         const val PREF_LYRIC_OFFSET_ENTRY_PREFIX = "lyric_offset_entry_v2:"
         const val PREF_LYRIC_OFFSET_INDEX = "lyric_offset_index_v2"
         const val PREF_TRANSLATION_MODE = "translation_mode_v1"
         private const val PREF_COMPACT_WIDTH = "compact_width_v1"
+        private const val PREF_EXPANDED_X = "expanded_x_v1"
+        private const val PREF_EXPANDED_Y = "expanded_y_v1"
+        private const val PREF_COMPACT_X = "compact_x_v1"
+        private const val PREF_COMPACT_Y = "compact_y_v1"
         private const val PREF_OVERLAY_ROTATED = "overlay_rotated_v1"
         const val BACKGROUND_TRANSPARENT = "transparent"
         const val BACKGROUND_LOW = "low"

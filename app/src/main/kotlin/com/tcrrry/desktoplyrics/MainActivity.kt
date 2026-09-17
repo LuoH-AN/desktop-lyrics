@@ -15,6 +15,7 @@ import android.provider.Settings
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
+import android.view.View
 import android.widget.Button
 import android.widget.SeekBar
 import android.widget.TextView
@@ -22,6 +23,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -38,6 +41,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var backgroundModeLow: TextView
     private lateinit var backgroundModeMedium: TextView
     private lateinit var backgroundModeHigh: TextView
+    private lateinit var settingsTargetExpanded: TextView
+    private lateinit var settingsTargetCompact: TextView
     private lateinit var seekFontSize: SeekBar
     private lateinit var fontSizeValue: TextView
     private lateinit var seekLyricOffset: SeekBar
@@ -50,6 +55,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var lyricColorBlack: TextView
     private lateinit var lyricColorPink: TextView
     private lateinit var lyricColorCustom: TextView
+    private lateinit var updateNoticePanel: View
+    private lateinit var updateNoticeTitle: TextView
+    private lateinit var updateNoticeSummary: TextView
+    private lateinit var updateViewButton: Button
+    private lateinit var updateLaterButton: Button
+    private lateinit var updateIgnoreButton: Button
+    private lateinit var versionCheckButton: TextView
+    private var availableRelease: UpdateChecker.Release? = null
+    private var settingsTargetIsCompact = false
     private var overlayStateReceiverRegistered = false
 
     private val overlayStateReceiver = object : BroadcastReceiver() {
@@ -84,6 +98,8 @@ class MainActivity : AppCompatActivity() {
         backgroundModeLow = findViewById(R.id.background_mode_low)
         backgroundModeMedium = findViewById(R.id.background_mode_medium)
         backgroundModeHigh = findViewById(R.id.background_mode_high)
+        settingsTargetExpanded = findViewById(R.id.settings_target_expanded)
+        settingsTargetCompact = findViewById(R.id.settings_target_compact)
         seekFontSize = findViewById(R.id.seek_font_size)
         fontSizeValue = findViewById(R.id.font_size_value)
         seekLyricOffset = findViewById(R.id.seek_lyric_offset)
@@ -96,6 +112,27 @@ class MainActivity : AppCompatActivity() {
         lyricColorBlack = findViewById(R.id.lyric_color_black)
         lyricColorPink = findViewById(R.id.lyric_color_pink)
         lyricColorCustom = findViewById(R.id.lyric_color_custom)
+        updateNoticePanel = findViewById(R.id.update_notice_panel)
+        updateNoticeTitle = findViewById(R.id.update_notice_title)
+        updateNoticeSummary = findViewById(R.id.update_notice_summary)
+        updateViewButton = findViewById(R.id.update_view_button)
+        updateLaterButton = findViewById(R.id.update_later_button)
+        updateIgnoreButton = findViewById(R.id.update_ignore_button)
+        versionCheckButton = findViewById(R.id.version_check_button)
+        versionCheckButton.text = "当前版本 $currentVersionName · 检查更新"
+        versionCheckButton.setOnClickListener { checkForUpdates(manual = true) }
+        updateViewButton.setOnClickListener {
+            val url = availableRelease?.pageUrl ?: UpdateChecker.RELEASES_LATEST_URL
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }
+        updateLaterButton.setOnClickListener { updateNoticePanel.visibility = View.GONE }
+        updateIgnoreButton.setOnClickListener {
+            availableRelease?.tag?.let {
+                updatePrefs.edit().putString(PREF_IGNORED_RELEASE, it).apply()
+            }
+            updateNoticePanel.visibility = View.GONE
+            Toast.makeText(this, "已忽略此版本，后续新版本仍会提醒", Toast.LENGTH_SHORT).show()
+        }
         seekFontSize.max = LyricsOverlayService.FONT_SCALE_MAX_PERCENT -
             LyricsOverlayService.FONT_SCALE_MIN_PERCENT
 
@@ -154,7 +191,10 @@ class MainActivity : AppCompatActivity() {
         backgroundModeHigh.setOnClickListener {
             setBackgroundMode(LyricsOverlayService.BACKGROUND_HIGH)
         }
+        settingsTargetExpanded.setOnClickListener { setSettingsTarget(false) }
+        settingsTargetCompact.setOnClickListener { setSettingsTarget(true) }
 
+        updateSettingsTargetUi()
         updateBackgroundModeUi()
         updateFontSizeUi()
         seekFontSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -200,6 +240,7 @@ class MainActivity : AppCompatActivity() {
         updateTranslationModeUi()
         updateLyricColorUi()
         updateOverlayUi()
+        checkForUpdates(manual = false)
     }
 
     override fun onStart() {
@@ -257,7 +298,7 @@ class MainActivity : AppCompatActivity() {
             else -> LyricsOverlayService.BACKGROUND_TRANSPARENT
         }
         overlayPrefs.edit()
-            .putString(LyricsOverlayService.PREF_BACKGROUND_MODE, normalized)
+            .putString(backgroundPreferenceKey(), normalized)
             .apply()
         updateBackgroundModeUi()
 
@@ -265,6 +306,7 @@ class MainActivity : AppCompatActivity() {
             startService(Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_SET_BACKGROUND
                 putExtra(LyricsOverlayService.EXTRA_BACKGROUND_MODE, normalized)
+                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, settingsTargetIsCompact)
             })
         }
     }
@@ -275,46 +317,43 @@ class MainActivity : AppCompatActivity() {
             LyricsOverlayService.FONT_SCALE_MAX_PERCENT
         )
         val previous = overlayPrefs.getInt(
-            LyricsOverlayService.PREF_FONT_SCALE_PERCENT,
-            LyricsOverlayService.FONT_SCALE_DEFAULT_PERCENT
+            fontScalePreferenceKey(),
+            expandedFontScale()
         ).coerceIn(
             LyricsOverlayService.FONT_SCALE_MIN_PERCENT,
             LyricsOverlayService.FONT_SCALE_MAX_PERCENT
         )
-        val density = resources.displayMetrics.density
-        fun minHeightPx(value: Int): Int =
-            (LyricsOverlayService.compactMinimumHeightDp(value) * density + 0.5f).toInt()
-
-        val storedHeight = overlayPrefs.getInt(
-            "compact_height_v3",
-            (48 * density + 0.5f).toInt()
-        )
-        val previousMin = minHeightPx(previous)
-        val nextMin = minHeightPx(normalized)
-        val adjustedHeight = if (storedHeight <= previousMin + (2 * density + 0.5f).toInt()) {
-            nextMin
-        } else {
-            maxOf(storedHeight, nextMin)
+        val editor = overlayPrefs.edit().putInt(fontScalePreferenceKey(), normalized)
+        if (settingsTargetIsCompact) {
+            val density = resources.displayMetrics.density
+            fun minHeightPx(value: Int): Int =
+                (LyricsOverlayService.compactMinimumHeightDp(value) * density + 0.5f).toInt()
+            val storedHeight = overlayPrefs.getInt("compact_height_v3", (48 * density + 0.5f).toInt())
+            val previousMin = minHeightPx(previous)
+            val nextMin = minHeightPx(normalized)
+            val adjustedHeight = if (storedHeight <= previousMin + (2 * density + 0.5f).toInt()) {
+                nextMin
+            } else {
+                maxOf(storedHeight, nextMin)
+            }
+            editor.putInt("compact_height_v3", adjustedHeight)
         }
-
-        overlayPrefs.edit()
-            .putInt(LyricsOverlayService.PREF_FONT_SCALE_PERCENT, normalized)
-            .putInt("compact_height_v3", adjustedHeight)
-            .apply()
+        editor.apply()
         fontSizeValue.text = "$normalized%"
 
         if (LyricsOverlayService.isRunning) {
             startService(Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_SET_FONT_SCALE
                 putExtra(LyricsOverlayService.EXTRA_FONT_SCALE_PERCENT, normalized)
+                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, settingsTargetIsCompact)
             })
         }
     }
 
     private fun updateFontSizeUi() {
         val percent = overlayPrefs.getInt(
-            LyricsOverlayService.PREF_FONT_SCALE_PERCENT,
-            LyricsOverlayService.FONT_SCALE_DEFAULT_PERCENT
+            fontScalePreferenceKey(),
+            expandedFontScale()
         ).coerceIn(
             LyricsOverlayService.FONT_SCALE_MIN_PERCENT,
             LyricsOverlayService.FONT_SCALE_MAX_PERCENT
@@ -325,8 +364,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateBackgroundModeUi() {
         val selectedMode = overlayPrefs.getString(
-            LyricsOverlayService.PREF_BACKGROUND_MODE,
-            LyricsOverlayService.BACKGROUND_DEFAULT
+            backgroundPreferenceKey(),
+            expandedBackgroundMode()
         )
 
         listOf(
@@ -418,20 +457,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setLyricColor(color: String) {
-        overlayPrefs.edit().putString(LyricsOverlayService.PREF_LYRIC_COLOR, color).apply()
+        overlayPrefs.edit().putString(lyricColorPreferenceKey(), color).apply()
         updateLyricColorUi()
         if (LyricsOverlayService.isRunning) {
             startService(Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_SET_LYRIC_COLOR
                 putExtra(LyricsOverlayService.EXTRA_LYRIC_COLOR, color)
+                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, settingsTargetIsCompact)
             })
         }
     }
 
     private fun updateLyricColorUi() {
         val selected = overlayPrefs.getString(
-            LyricsOverlayService.PREF_LYRIC_COLOR,
-            LyricsOverlayService.LYRIC_COLOR_DEFAULT
+            lyricColorPreferenceKey(),
+            expandedLyricColor()
         ).orEmpty()
         val options = listOf(
             lyricColorWhite to "#FFFFFF",
@@ -482,8 +522,8 @@ class MainActivity : AppCompatActivity() {
         val greenValue = picker.findViewById<TextView>(R.id.color_green_value)
         val blueValue = picker.findViewById<TextView>(R.id.color_blue_value)
         val initialHex = overlayPrefs.getString(
-            LyricsOverlayService.PREF_LYRIC_COLOR,
-            LyricsOverlayService.LYRIC_COLOR_DEFAULT
+            lyricColorPreferenceKey(),
+            expandedLyricColor()
         ).orEmpty().takeIf { Regex("^#[0-9A-Fa-f]{6}$").matches(it) }
             ?: LyricsOverlayService.LYRIC_COLOR_DEFAULT
         val initial = Color.parseColor(initialHex)
@@ -559,6 +599,49 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun setSettingsTarget(compact: Boolean) {
+        if (settingsTargetIsCompact == compact) return
+        settingsTargetIsCompact = compact
+        updateSettingsTargetUi()
+        updateBackgroundModeUi()
+        updateFontSizeUi()
+        updateLyricColorUi()
+    }
+
+    private fun updateSettingsTargetUi() {
+        updateSegmentOptions(
+            listOf(settingsTargetExpanded to "expanded", settingsTargetCompact to "compact"),
+            if (settingsTargetIsCompact) "compact" else "expanded"
+        )
+    }
+
+    private fun backgroundPreferenceKey(): String = if (settingsTargetIsCompact) {
+        LyricsOverlayService.PREF_BACKGROUND_MODE_COMPACT
+    } else LyricsOverlayService.PREF_BACKGROUND_MODE
+
+    private fun fontScalePreferenceKey(): String = if (settingsTargetIsCompact) {
+        LyricsOverlayService.PREF_FONT_SCALE_COMPACT_PERCENT
+    } else LyricsOverlayService.PREF_FONT_SCALE_PERCENT
+
+    private fun lyricColorPreferenceKey(): String = if (settingsTargetIsCompact) {
+        LyricsOverlayService.PREF_LYRIC_COLOR_COMPACT
+    } else LyricsOverlayService.PREF_LYRIC_COLOR
+
+    private fun expandedBackgroundMode(): String = overlayPrefs.getString(
+        LyricsOverlayService.PREF_BACKGROUND_MODE,
+        LyricsOverlayService.BACKGROUND_DEFAULT
+    ).orEmpty().ifBlank { LyricsOverlayService.BACKGROUND_DEFAULT }
+
+    private fun expandedFontScale(): Int = overlayPrefs.getInt(
+        LyricsOverlayService.PREF_FONT_SCALE_PERCENT,
+        LyricsOverlayService.FONT_SCALE_DEFAULT_PERCENT
+    )
+
+    private fun expandedLyricColor(): String = overlayPrefs.getString(
+        LyricsOverlayService.PREF_LYRIC_COLOR,
+        LyricsOverlayService.LYRIC_COLOR_DEFAULT
+    ).orEmpty().ifBlank { LyricsOverlayService.LYRIC_COLOR_DEFAULT }
+
     private fun updateOverlayUi() {
         val listenerGranted = hasNotificationListenerAccess()
         val overlayGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
@@ -605,4 +688,66 @@ class MainActivity : AppCompatActivity() {
             else -> "权限齐全，可以开启；无需给音乐 App 单独打开通知显示"
         }
     }
+
+    private val updatePrefs by lazy {
+        getSharedPreferences("update_check_v1", Context.MODE_PRIVATE)
+    }
+
+    private fun checkForUpdates(manual: Boolean) {
+        val now = System.currentTimeMillis()
+        if (!manual && now - updatePrefs.getLong(PREF_LAST_UPDATE_CHECK, 0L) < UPDATE_CHECK_INTERVAL_MS) {
+            return
+        }
+        updatePrefs.edit().putLong(PREF_LAST_UPDATE_CHECK, now).apply()
+        if (manual) {
+            versionCheckButton.text = "正在检查更新…"
+            versionCheckButton.isEnabled = false
+        }
+        lifecycleScope.launch {
+            val result = UpdateChecker.fetchLatest(currentVersionName)
+            if (manual) {
+                versionCheckButton.text =
+                    "当前版本 $currentVersionName · 检查更新"
+                versionCheckButton.isEnabled = true
+            }
+            result.onSuccess { release ->
+                val newer = UpdateChecker.isNewer(release.version, currentVersionName)
+                val ignored = updatePrefs.getString(PREF_IGNORED_RELEASE, "") == release.tag
+                if (newer && (manual || !ignored)) {
+                    availableRelease = release
+                    updateNoticeTitle.text = "发现新版本 ${release.tag}"
+                    updateNoticeSummary.text = release.summary
+                    updateNoticePanel.visibility = View.VISIBLE
+                } else if (manual) {
+                    updateNoticePanel.visibility = View.GONE
+                    Toast.makeText(
+                        this@MainActivity,
+                        if (newer) "该版本已被忽略，可从 GitHub 下载" else "当前已是最新版",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    if (newer) {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.pageUrl)))
+                    }
+                }
+            }.onFailure {
+                if (manual) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "暂时无法检查更新，请稍后重试",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
+
+    companion object {
+        private const val PREF_LAST_UPDATE_CHECK = "last_check_at"
+        private const val PREF_IGNORED_RELEASE = "ignored_release"
+        private const val UPDATE_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L
+    }
+
+    private val currentVersionName: String
+        get() = packageManager.getPackageInfo(packageName, 0).versionName
+            .orEmpty().substringBefore('-').ifBlank { "1.07" }
 }

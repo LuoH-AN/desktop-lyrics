@@ -223,6 +223,83 @@
                         android:textSize="11sp" />
                 </LinearLayout>
             </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/update_notice_panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_ui_panel"
+                android:orientation="vertical"
+                android:padding="12dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/update_notice_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="发现新版本"
+                    android:textColor="#F8F8FA"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/update_notice_summary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:ellipsize="end"
+                    android:maxLines="3"
+                    android:textColor="#989FAF"
+                    android:textSize="11sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:layout_marginTop="9dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/update_view_button"
+                        style="@style/SettingsAction"
+                        android:layout_width="0dp"
+                        android:layout_height="38dp"
+                        android:layout_marginEnd="4dp"
+                        android:layout_weight="1"
+                        android:text="查看更新" />
+
+                    <Button
+                        android:id="@+id/update_later_button"
+                        style="@style/SettingsAction"
+                        android:layout_width="0dp"
+                        android:layout_height="38dp"
+                        android:layout_marginStart="4dp"
+                        android:layout_marginEnd="4dp"
+                        android:layout_weight="1"
+                        android:text="稍后" />
+
+                    <Button
+                        android:id="@+id/update_ignore_button"
+                        style="@style/SettingsAction"
+                        android:layout_width="0dp"
+                        android:layout_height="38dp"
+                        android:layout_marginStart="4dp"
+                        android:layout_weight="1"
+                        android:text="忽略此版" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/version_check_button"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_ui_pill"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center"
+                android:text="当前版本 1.07 · 检查更新"
+                android:textColor="#F7F7FA"
+                android:textSize="14sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -246,15 +323,48 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="3dp"
-                android:text="在清晰度、透明感与耗电之间选择"
+                android:text="分别设置展开与收起形态的背景、字号和歌词颜色"
                 android:textColor="#7F8798"
                 android:textSize="11sp" />
+
+            <LinearLayout
+                android:id="@+id/settings_target_shell"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_ui_pill"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="4dp">
+
+                <TextView
+                    android:id="@+id/settings_target_expanded"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_ui_segment_selected"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="center"
+                    android:text="展开"
+                    android:textColor="#202331"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/settings_target_compact"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="收起"
+                    android:textColor="#9DA4B5"
+                    android:textSize="12sp" />
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/background_mode_shell"
                 android:layout_width="match_parent"
                 android:layout_height="44dp"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="8dp"
                 android:background="@drawable/bg_ui_pill"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"

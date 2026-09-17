@@ -48,6 +48,8 @@ Watch on Bilibili: [Desktop Lyrics for Android — Apple Music / Spotify real-ti
 - Tap the source pill to cycle providers, double-tap to rematch the current provider and remember the selected recording, or long-press to restore automatic matching; a failed rematch keeps the current lyrics
 - Manage remembered lyric choices by song, search the history, preview QQ Music, NetEase, and LRCLIB versions, choose a result, restore the initial match, or clear the complete matching cache
 - Refined settings layout with a pure-black background and red accent, a separate dynamic-background card, stacked font-size and timing-offset controls, and side-by-side source/offset managers
+- Expanded and compact modes remember independent lyric size, color, dynamic background, window geometry, and position; full-screen lyrics use the expanded appearance
+- A lightweight GitHub Releases check runs at most once per day when opening settings; update prompts can be postponed or ignored for that release, and a manual check remains available
 
 ## Requirements and compatibility
 
@@ -77,7 +79,7 @@ Long-running behavior may vary with vendor-specific battery restrictions. If the
 | --- | --- |
 | Notification Access | Access public MediaSession data; notification message bodies are not read |
 | Display over other apps | Show the floating lyrics overlay |
-| Network access | Search public lyrics and artwork providers |
+| Network access | Search public lyrics/artwork providers and perform a low-frequency GitHub release check |
 | Foreground service | Keep a user-started overlay running in the background |
 
 Desktop Lyrics does not request location or microphone permission, upload location data, or upload a complete listening history. When all direct lyrics searches fail, an iTunes Search request may be used only to resolve localized track and artist aliases. Optional translation sends lyrics only to the translation mode or API selected by the user. See [PRIVACY.md](./PRIVACY.md) for details.
