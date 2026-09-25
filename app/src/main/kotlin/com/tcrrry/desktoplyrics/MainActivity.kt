@@ -131,6 +131,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        web.onResume()
+        web.resumeTimers()
         ThemePrefs.apply(appPrefs.getString(ThemePrefs.KEY, ThemePrefs.FOLLOW))
         updateGate()
         startSessionMonitor()
@@ -141,6 +143,8 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         mainHandler.removeCallbacks(progressTick)
         stopSessionMonitor()
+        web.onPause()
+        web.pauseTimers()   // 停掉 WebView 的 rAF/定时器，释放 CPU，避免开设置页/切主题卡顿
         super.onPause()
     }
 

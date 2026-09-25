@@ -64,25 +64,26 @@
     transition:transform .9s cubic-bezier(.2,.7,.2,1); /* 与行过渡同步 */
   }
   .line {
-    padding:12px 0; cursor:pointer;
+    padding:11px 0; cursor:pointer;
     color:var(--lyric-past);
-    font-size:23px;                 /* 统一字号：靠 scale 区分远近，避免 font-size 突跳/重排 */
-    font-weight:700; letter-spacing:-.4px; line-height:1.3;
+    font-size:27px;                 /* 基准=当前行大小；当前行 scale(1) 不溢出，其余缩小 */
+    font-weight:700; letter-spacing:-.5px; line-height:1.32;
     transform-origin:left center;
+    overflow-wrap:break-word; word-break:break-word; /* 长行折行不横向溢出 */
     transition:color .8s ease, filter .8s ease, opacity .8s ease,
                transform .9s cubic-bezier(.2,.7,.2,1);
     will-change:transform, filter, opacity;
   }
   .line .sub {
-    display:block; font-size:.58em; font-weight:600; margin-top:5px;
+    display:block; font-size:.6em; font-weight:600; margin-top:5px;
     opacity:.72; letter-spacing:0;
   }
-  /* 景深：纯 transform scale + opacity + blur，layout 恒定→滚动连续无顿 */
-  .line[data-d="0"] { color:var(--lyric-cur); filter:none;        opacity:1;   transform:scale(1.26); }
-  .line[data-d="1"] {                          filter:blur(.5px);  opacity:.82; transform:scale(1.0); }
-  .line[data-d="2"] {                          filter:blur(1.4px); opacity:.6;  transform:scale(.97); }
-  .line[data-d="3"] {                          filter:blur(2.6px); opacity:.4;  transform:scale(.945); }
-  .line[data-d="4"] {                          filter:blur(4px);   opacity:.25; transform:scale(.925); }
+  /* 景深：当前行 scale(1) 为最大(不超容器)，其余往小缩；纯 transform+opacity+blur，无重排 */
+  .line[data-d="0"] { color:var(--lyric-cur); filter:none;        opacity:1;   transform:scale(1); }
+  .line[data-d="1"] {                          filter:blur(.5px);  opacity:.8;  transform:scale(.85); }
+  .line[data-d="2"] {                          filter:blur(1.4px); opacity:.58; transform:scale(.82); }
+  .line[data-d="3"] {                          filter:blur(2.6px); opacity:.4;  transform:scale(.8); }
+  .line[data-d="4"] {                          filter:blur(4px);   opacity:.25; transform:scale(.785); }
 
   /* 当前行呼吸：只动 opacity，绝不碰 transform（否则与 scale 过渡打架） */
   .line[data-d="0"] { animation:breathe 5s ease-in-out infinite; animation-delay:.9s; }
