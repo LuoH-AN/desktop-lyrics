@@ -25,6 +25,7 @@ import java.util.Locale
 import java.util.concurrent.Executors
 
 class TranslationSettingsActivity : AppCompatActivity() {
+    private fun col(res: Int) = androidx.core.content.ContextCompat.getColor(this, res)
     private val prefs by lazy { getSharedPreferences("supplement_translation", Context.MODE_PRIVATE) }
     private val manager by lazy { RemoteModelManager.getInstance() }
     private lateinit var languages: LinearLayout
@@ -63,10 +64,10 @@ class TranslationSettingsActivity : AppCompatActivity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun title(code: String) = Locale.forLanguageTag(code).getDisplayLanguage(Locale.SIMPLIFIED_CHINESE) + " · $code"
     private fun label(text: String, size: Float = 14f) = TextView(this).apply {
-        this.text = text; textSize = size; setTextColor(Color.LTGRAY); setPadding(0, dp(10), 0, dp(8))
+        this.text = text; textSize = size; setTextColor(col(R.color.text_secondary)); setPadding(0, dp(10), 0, dp(8))
     }
     private fun button(text: String, action: () -> Unit) = Button(this).apply {
-        this.text = text; isAllCaps = false; setTextColor(Color.WHITE)
+        this.text = text; isAllCaps = false; setTextColor(col(R.color.text_primary))
         setBackgroundResource(R.drawable.bg_ui_pill)
         stateListAnimator = null
         setOnClickListener { action() }
@@ -80,8 +81,8 @@ class TranslationSettingsActivity : AppCompatActivity() {
         layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) }
     }
     private fun field(hint: String, value: String = "") = EditText(this).apply {
-        this.hint = hint; setText(value); textSize = 14f; setTextColor(Color.WHITE)
-        setHintTextColor(Color.rgb(119, 127, 147)); isSingleLine = true
+        this.hint = hint; setText(value); textSize = 14f; setTextColor(col(R.color.text_primary))
+        setHintTextColor(col(R.color.text_tertiary)); isSingleLine = true
         setBackgroundResource(R.drawable.bg_ui_input)
         minHeight = dp(50)
     }
@@ -90,10 +91,10 @@ class TranslationSettingsActivity : AppCompatActivity() {
         setPadding(dp(12), 0, dp(12), 0)
         adapter = object : ArrayAdapter<String>(this@TranslationSettingsActivity, android.R.layout.simple_spinner_dropdown_item, items) {
             override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View =
-                super.getView(position, convertView, parent).apply { (this as? TextView)?.setTextColor(Color.WHITE) }
+                super.getView(position, convertView, parent).apply { (this as? TextView)?.setTextColor(col(R.color.text_primary)) }
             override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View =
                 super.getDropDownView(position, convertView, parent).apply {
-                    setBackgroundColor(Color.rgb(25,27,36)); (this as? TextView)?.setTextColor(Color.WHITE)
+                    setBackgroundColor(col(R.color.app_surface)); (this as? TextView)?.setTextColor(col(R.color.text_primary))
                 }
         }
     }
@@ -102,12 +103,12 @@ class TranslationSettingsActivity : AppCompatActivity() {
         setPadding(dp(18), dp(14), dp(18), dp(18))
         setBackgroundResource(R.drawable.bg_ui_card)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
-        addView(label(title, 19f).apply { setTextColor(Color.WHITE) })
-        if (subtitle.isNotBlank()) addView(label(subtitle, 12f).apply { setTextColor(Color.rgb(158, 165, 182)); setPadding(0, 0, 0, dp(8)) })
+        addView(label(title, 19f).apply { setTextColor(col(R.color.text_primary)) })
+        if (subtitle.isNotBlank()) addView(label(subtitle, 12f).apply { setTextColor(col(R.color.text_secondary)); setPadding(0, 0, 0, dp(8)) })
     }
     private fun showStatus(message: String, success: Boolean = false) {
         status.text = message
-        status.setTextColor(if (success) Color.rgb(255, 138, 155) else Color.rgb(255, 115, 136))
+        status.setTextColor(col(R.color.text_secondary))
         status.visibility = View.VISIBLE
         status.alpha = 0f
         status.translationY = dp(5).toFloat()
@@ -116,7 +117,7 @@ class TranslationSettingsActivity : AppCompatActivity() {
     private fun updateModeUi(animate: Boolean) {
         modeSegments.forEachIndexed { index, view ->
             view.setBackgroundResource(if (index == selectedMode) R.drawable.bg_ui_segment_selected else android.R.color.transparent)
-            view.setTextColor(if (index == selectedMode) Color.rgb(32, 35, 51) else Color.rgb(180, 186, 201))
+            view.setTextColor(if (index == selectedMode) col(R.color.text_on_accent) else col(R.color.text_secondary))
         }
         val showApi = selectedMode == 2
         setPanelVisible(apiBox, showApi, animate)
@@ -184,14 +185,14 @@ class TranslationSettingsActivity : AppCompatActivity() {
 
         content.addView(TextView(this).apply {
             text = "‹  补充翻译"
-            textSize = 25f
-            setTextColor(Color.WHITE)
+            textSize = 21f
+            setTextColor(col(R.color.text_primary))
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), dp(8), 0, dp(10))
             setOnClickListener { animate().translationX(-dp(4).toFloat()).setDuration(90).withEndAction { finish() }.start() }
         })
         content.addView(label("平台译文优先，只在缺少译文时补充。译文会缓存到本机。", 12f).apply {
-            setPadding(dp(2), 0, 0, dp(3)); setTextColor(Color.rgb(144, 151, 169))
+            setPadding(dp(2), 0, 0, dp(3)); setTextColor(col(R.color.text_tertiary))
         })
 
         val settingsCard = card("翻译方式", "点击对应方式立即应用；平台自带译文始终优先。")
@@ -227,8 +228,8 @@ class TranslationSettingsActivity : AppCompatActivity() {
             setBackgroundResource(R.drawable.bg_ui_panel)
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
         }
-        apiBox.addView(label("兼容 Chat Completions 的服务", 14f).apply { setTextColor(Color.WHITE) })
-        apiProfileLabel = label("", 14f).apply { setTextColor(Color.WHITE); setPadding(0, 0, 0, 0) }
+        apiBox.addView(label("兼容 Chat Completions 的服务", 14f).apply { setTextColor(col(R.color.text_primary)) })
+        apiProfileLabel = label("", 14f).apply { setTextColor(col(R.color.text_primary)); setPadding(0, 0, 0, 0) }
         apiProfileButton = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -236,7 +237,7 @@ class TranslationSettingsActivity : AppCompatActivity() {
             setBackgroundResource(R.drawable.bg_ui_pill)
             layoutParams = LinearLayout.LayoutParams(-1, dp(50)).apply { bottomMargin = dp(8) }
             addView(apiProfileLabel, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(label("⌄", 19f).apply { setTextColor(Color.rgb(255,138,155)); setPadding(dp(8), 0, 0, dp(4)) })
+            addView(label("⌄", 19f).apply { setTextColor(col(R.color.text_secondary)); setPadding(dp(8), 0, 0, dp(4)) })
             setOnClickListener { showApiProfileMenu() }
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
@@ -271,14 +272,14 @@ class TranslationSettingsActivity : AppCompatActivity() {
             setBackgroundResource(R.drawable.bg_ui_panel)
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
         }
-        offlineBox.addView(label("离线语言包 · 需要代理", 16f).apply { setTextColor(Color.WHITE) })
+        offlineBox.addView(label("离线语言包 · 需要代理", 16f).apply { setTextColor(col(R.color.text_primary)) })
         offlineBox.addView(label("自动识别源语言。单个模型约 30 MB；翻译成中文还需要共用中文模型。系统不提供下载百分比和速度。", 11f).apply {
-            setTextColor(Color.rgb(142, 150, 169))
+            setTextColor(col(R.color.text_tertiary))
         })
         downloadProgress = ProgressBar(this).apply {
             isIndeterminate = true
             visibility = View.GONE
-            indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.rgb(250, 45, 72))
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(col(R.color.control_active))
         }
         offlineBox.addView(downloadProgress, LinearLayout.LayoutParams(-1, dp(4)).apply { topMargin = dp(6) })
         search = field("搜索更多语言，例如法语、德语、西班牙语")
@@ -351,9 +352,9 @@ class TranslationSettingsActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(14), dp(18), dp(18))
             setBackgroundResource(R.drawable.bg_ui_card)
-            addView(label("选择翻译 API", 20f).apply { setTextColor(Color.WHITE) })
+            addView(label("选择翻译 API", 20f).apply { setTextColor(col(R.color.text_primary)) })
             addView(label("地址、模型和密钥会按配置分别保存。", 12f).apply {
-                setTextColor(Color.rgb(150,158,177)); setPadding(0, 0, 0, dp(5))
+                setTextColor(col(R.color.text_secondary)); setPadding(0, 0, 0, dp(5))
             })
         }
         TranslationApiProfiles.all(this).forEach { profile ->
@@ -364,8 +365,8 @@ class TranslationSettingsActivity : AppCompatActivity() {
         panel.addView(button("＋ 添加 API   ›") {
             dialog.dismiss(); saveApiProfileDraft()
             startActivity(Intent(this, ApiProfileManagerActivity::class.java))
-        }.apply { setBackgroundResource(R.drawable.bg_ui_primary_button) })
-        panel.addView(button("取消") { dialog.dismiss() }.apply { alpha = .72f })
+        }.apply { setBackgroundResource(R.drawable.bg_flat_button); setTextColor(col(R.color.text_on_accent)) })
+        panel.addView(button("取消") { dialog.dismiss() })
         dialog.setContentView(panel)
         dialog.window?.apply {
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
@@ -450,15 +451,15 @@ class TranslationSettingsActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(16), dp(20), dp(18))
             setBackgroundResource(R.drawable.bg_ui_card)
-            addView(label("下载 ${title(code)}", 20f).apply { setTextColor(Color.WHITE) })
+            addView(label("下载 ${title(code)}", 20f).apply { setTextColor(col(R.color.text_primary)) })
             addView(label("将下载该语言及缺失的共用中文模型。请先确保手机代理可用；每个模型约 30 MB。", 12f).apply {
-                setTextColor(Color.rgb(158, 165, 182)); setPadding(0, 0, 0, dp(8))
+                setTextColor(col(R.color.text_secondary)); setPadding(0, 0, 0, dp(8))
             })
             addView(button("仅 Wi-Fi 下载") { dialog.dismiss(); download(code, true) }.apply {
-                setBackgroundResource(R.drawable.bg_ui_primary_button)
+                setBackgroundResource(R.drawable.bg_flat_button); setTextColor(col(R.color.text_on_accent))
             })
             addView(button("允许当前网络") { dialog.dismiss(); download(code, false) })
-            addView(button("取消") { dialog.dismiss() }.apply { alpha = .72f })
+            addView(button("取消") { dialog.dismiss() })
         }
         dialog.setContentView(panel)
         dialog.window?.apply {
@@ -483,9 +484,9 @@ class TranslationSettingsActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(16), dp(20), dp(18))
             setBackgroundResource(R.drawable.bg_ui_card)
-            addView(label("删除语言包", 20f).apply { setTextColor(Color.WHITE) })
+            addView(label("删除语言包", 20f).apply { setTextColor(col(R.color.text_primary)) })
             addView(label(message, 12f).apply {
-                setTextColor(Color.rgb(158, 165, 182)); setPadding(0, 0, 0, dp(8))
+                setTextColor(col(R.color.text_secondary)); setPadding(0, 0, 0, dp(8))
             })
             addView(button("确认删除") {
                 dialog.dismiss()
@@ -497,8 +498,8 @@ class TranslationSettingsActivity : AppCompatActivity() {
                     .addOnFailureListener(this@TranslationSettingsActivity) {
                         showStatus("删除失败，请停止离线翻译后重试")
                     }
-            }.apply { setBackgroundResource(R.drawable.bg_ui_primary_button) })
-            addView(button("取消") { dialog.dismiss() }.apply { alpha = .72f })
+            }.apply { setBackgroundResource(R.drawable.bg_flat_button); setTextColor(col(R.color.text_on_accent)) })
+            addView(button("取消") { dialog.dismiss() })
         }
         dialog.setContentView(panel)
         dialog.window?.apply {

@@ -108,7 +108,7 @@
                 <View style="@style/CellDivider" />
                 <!-- 动态背景 四段 -->
                 <LinearLayout style="@style/CellColumn">
-                    <TextView style="@style/CellTitle" android:text="动态背景" />
+                    <TextView style="@style/CellColumnLabel" android:text="动态背景" />
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="38dp"

@@ -14,6 +14,7 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.graphics.Typeface
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,6 +30,7 @@ class LyricSourceManagerActivity : AppCompatActivity() {
     private var selected: String? = null
     private var message = ""
     private var songQuery = ""
+    private fun col(res: Int) = ContextCompat.getColor(this, res)
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         content = LinearLayout(this).apply {
@@ -72,13 +74,12 @@ class LyricSourceManagerActivity : AppCompatActivity() {
             content.addView(button("清除所有歌词源缓存") {
                 save(emptyList()); selected = null; message = "已清除所有匹配记忆和历史版本，恢复自动匹配"; render()
             }.apply {
-                setTextColor(Color.rgb(255, 138, 155))
                 isEnabled = values.isNotEmpty() && !busy
             })
             content.addView(label("仅清除这里的匹配记忆和历史版本，不影响翻译语言包与偏移设置。", 12f))
             val input = EditText(this).apply {
                 hint = "搜索已记录的歌名或歌手"; textSize = 14f
-                setTextColor(Color.WHITE); setHintTextColor(Color.rgb(144,151,169))
+                setTextColor(col(R.color.text_primary)); setHintTextColor(col(R.color.text_tertiary))
                 setSingleLine(true); setPadding(dp(14),dp(8),dp(14),dp(8))
                 setBackgroundResource(R.drawable.bg_ui_pill); setText(songQuery)
             }
@@ -126,7 +127,7 @@ class LyricSourceManagerActivity : AppCompatActivity() {
         }
         content.addView(button("删除记忆 / 恢复自动匹配") {
             save(entries().filter { it.optString("key") != key }); selected = null; message = "已删除，下次搜索使用自动匹配"; render()
-        }.apply { setTextColor(Color.rgb(255, 138, 155)) })
+        })
         val history = entry.optJSONArray("history") ?: JSONArray().put(entry.optJSONObject("candidate"))
         for (i in 0 until history.length()) {
             val candidate = history.optJSONObject(i) ?: continue
@@ -179,7 +180,8 @@ class LyricSourceManagerActivity : AppCompatActivity() {
     }
     private fun dp(value: Int) = (resources.displayMetrics.density * value).toInt()
     private fun label(value: String, size: Float) = TextView(this).apply {
-        text = value; textSize = size; setTextColor(if(size >= 17) Color.WHITE else Color.rgb(174,183,204))
+        text = value; textSize = size
+        setTextColor(if(size >= 17) col(R.color.text_primary) else col(R.color.text_secondary))
         setPadding(0, dp(6), 0, dp(8))
     }
     private fun card() = LinearLayout(this).apply {
@@ -188,7 +190,7 @@ class LyricSourceManagerActivity : AppCompatActivity() {
         layoutParams = LinearLayout.LayoutParams(-1,-2).apply { topMargin = dp(12) }
     }
     private fun button(value: String, action: () -> Unit) = Button(this).apply {
-        text = value; isAllCaps = false; textSize = 14f; setTextColor(Color.WHITE)
+        text = value; isAllCaps = false; textSize = 14f; setTextColor(col(R.color.text_primary))
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         stateListAnimator = null
         setBackgroundResource(R.drawable.bg_ui_pill)

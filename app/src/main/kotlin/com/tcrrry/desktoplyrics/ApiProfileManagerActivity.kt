@@ -16,6 +16,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
 class ApiProfileManagerActivity : AppCompatActivity() {
+    private fun col(res: Int) = androidx.core.content.ContextCompat.getColor(this, res)
     private val prefs by lazy { getSharedPreferences("supplement_translation", Context.MODE_PRIVATE) }
     private lateinit var name: EditText
     private lateinit var endpoint: EditText
@@ -28,14 +29,14 @@ class ApiProfileManagerActivity : AppCompatActivity() {
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun label(value: String, size: Float = 14f) = TextView(this).apply {
-        text = value; textSize = size; setTextColor(Color.LTGRAY); setPadding(0, dp(9), 0, dp(7))
+        text = value; textSize = size; setTextColor(col(R.color.text_secondary)); setPadding(0, dp(9), 0, dp(7))
     }
     private fun field(hintText: String) = EditText(this).apply {
-        hint = hintText; textSize = 14f; setTextColor(Color.WHITE); setHintTextColor(Color.rgb(119,127,147))
+        hint = hintText; textSize = 14f; setTextColor(col(R.color.text_primary)); setHintTextColor(col(R.color.text_tertiary))
         isSingleLine = true; minHeight = dp(50); setBackgroundResource(R.drawable.bg_ui_input)
     }
     private fun button(value: String, action: () -> Unit) = Button(this).apply {
-        text = value; isAllCaps = false; setTextColor(Color.WHITE); stateListAnimator = null
+        text = value; isAllCaps = false; setTextColor(col(R.color.text_primary)); stateListAnimator = null
         setBackgroundResource(R.drawable.bg_ui_pill); setOnClickListener { action() }
         setOnTouchListener { view, event ->
             when (event.actionMasked) {
@@ -52,7 +53,7 @@ class ApiProfileManagerActivity : AppCompatActivity() {
     }
     private fun showStatus(message: String, success: Boolean = false) {
         status.text = message
-        status.setTextColor(if (success) Color.rgb(255,138,155) else Color.rgb(255,115,136))
+        status.setTextColor(col(R.color.text_secondary))
         status.alpha = 0f; status.animate().alpha(1f).setDuration(180).start()
     }
 
@@ -67,35 +68,35 @@ class ApiProfileManagerActivity : AppCompatActivity() {
             setBackgroundResource(R.drawable.bg_main_screen); addView(content)
         })
         content.addView(TextView(this).apply {
-            text = "‹  API 配置"; textSize = 25f; setTextColor(Color.WHITE); gravity = Gravity.CENTER_VERTICAL
+            text = "‹  API 配置"; textSize = 21f; setTextColor(col(R.color.text_primary)); gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), dp(8), 0, dp(10)); setOnClickListener { finish() }
         })
         content.addView(label("可添加多套兼容 Chat Completions 的服务，并随时切换。", 12f).apply {
-            setTextColor(Color.rgb(144,151,169)); setPadding(dp(2), 0, 0, dp(3))
+            setTextColor(col(R.color.text_tertiary)); setPadding(dp(2), 0, 0, dp(3))
         })
 
         val editor = card()
-        editor.addView(label("添加 API", 19f).apply { setTextColor(Color.WHITE) })
+        editor.addView(label("添加 API", 19f).apply { setTextColor(col(R.color.text_primary)) })
         name = field("配置名称，例如 OpenAI、硅基流动")
         endpoint = field("HTTPS 服务地址，例如 https://example.com/v1")
         model = field("模型名称")
         key = field("API Key").apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD }
         editor.addView(name); editor.addView(endpoint); editor.addView(model); editor.addView(key)
         save = button("保存并使用") { saveProfile() }.apply {
-            setBackgroundResource(R.drawable.bg_ui_primary_button)
+            setBackgroundResource(R.drawable.bg_flat_button); setTextColor(col(R.color.text_on_accent))
             layoutParams = LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(10) }
         }
         editor.addView(save)
         status = label("填写完整后保存；密钥会加密保存在本机。", 12f).apply {
-            setTextColor(Color.rgb(150,158,177)); setPadding(dp(5), dp(10), dp(5), 0)
+            setTextColor(col(R.color.text_secondary)); setPadding(dp(5), dp(10), dp(5), 0)
         }
         editor.addView(status)
         content.addView(editor)
 
         val saved = card()
-        saved.addView(label("API 配置", 19f).apply { setTextColor(Color.WHITE) })
+        saved.addView(label("API 配置", 19f).apply { setTextColor(col(R.color.text_primary)) })
         saved.addView(label("内置与自行添加的配置都可以编辑或删除。", 12f).apply {
-            setTextColor(Color.rgb(144,151,169)); setPadding(0, 0, 0, dp(4))
+            setTextColor(col(R.color.text_tertiary)); setPadding(0, 0, 0, dp(4))
         })
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         saved.addView(list)
@@ -145,7 +146,7 @@ class ApiProfileManagerActivity : AppCompatActivity() {
         list.removeAllViews()
         val profiles = TranslationApiProfiles.all(this)
         if (profiles.isEmpty()) {
-            list.addView(label("还没有 API 配置，请在上方添加", 13f).apply { setTextColor(Color.rgb(133,141,160)) })
+            list.addView(label("还没有 API 配置，请在上方添加", 13f).apply { setTextColor(col(R.color.text_tertiary)) })
             return
         }
         profiles.forEach { profile ->
@@ -162,8 +163,8 @@ class ApiProfileManagerActivity : AppCompatActivity() {
     private fun confirmDelete(profile: TranslationApiProfile) {
         val dialog = Dialog(this)
         val panel = card().apply {
-            addView(label("删除 ${profile.label}？", 20f).apply { setTextColor(Color.WHITE) })
-            addView(label("地址、模型和本机加密密钥都会删除，此操作无法恢复。", 12f).apply { setTextColor(Color.rgb(158,165,182)) })
+            addView(label("删除 ${profile.label}？", 20f).apply { setTextColor(col(R.color.text_primary)) })
+            addView(label("地址、模型和本机加密密钥都会删除，此操作无法恢复。", 12f).apply { setTextColor(col(R.color.text_secondary)) })
             addView(button("确认删除") {
                 dialog.dismiss(); TranslationApiProfiles.remove(this@ApiProfileManagerActivity, profile.id)
                 if (editingId == profile.id) clearEditor()
@@ -171,8 +172,8 @@ class ApiProfileManagerActivity : AppCompatActivity() {
                     prefs.edit().putString("active_api_profile", TranslationApiProfiles.all(this@ApiProfileManagerActivity).firstOrNull()?.id ?: "none").apply()
                 }
                 showStatus("已删除 ${profile.label}", true); renderProfiles()
-            }.apply { setBackgroundResource(R.drawable.bg_ui_primary_button); layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) } })
-            addView(button("取消") { dialog.dismiss() }.apply { alpha = .72f; layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(7) } })
+            }.apply { setBackgroundResource(R.drawable.bg_flat_button); setTextColor(col(R.color.text_on_accent)); layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) } })
+            addView(button("取消") { dialog.dismiss() }.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(7) } })
         }
         dialog.setContentView(panel)
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
