@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 黑白灰扁平配色 · 亮色 (values/) -->
+    <color name="app_bg">#FBFBFA</color>
+    <color name="app_surface">#FFFFFF</color>
+    <color name="app_line">#E4E2DC</color>
+    <color name="app_line_soft">#EFEDE7</color>
+    <color name="text_primary">#111113</color>
+    <color name="text_secondary">#6E6C66</color>
+    <color name="text_tertiary">#9A968C</color>
+    <color name="text_on_accent">#FFFFFF</color>
+    <color name="accent">#111113</color>          <!-- 亮色主操作=近黑 -->
+    <color name="accent_pressed">#333336</color>
+    <color name="control_track">#E0DED7</color>
+    <color name="control_active">#111113</color>
+    <color name="nav_bar">#FBFBFA</color>
+    <color name="status_bar">#FBFBFA</color>
+</resources>

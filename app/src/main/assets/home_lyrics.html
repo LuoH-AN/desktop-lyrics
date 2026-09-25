@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<style>
+  /* ===================================================================
+     桌面歌词 · 主页（Apple Music 风格灵动歌词）
+     - 6 层动效：放大高亮 / 弹簧滚动 / 景深模糊 / 逐字点亮 / 呼吸浮动 / 间奏三点
+     - 黑白灰扁平配色，纯边框，无阴影
+     - 亮/暗主题：html[data-theme=light|dark]
+     - 由原生通过 window.LyricHome API 驱动；浏览器直开时用内置 demo
+     =================================================================== */
+  :root {
+    --bg:#0a0a0b;
+    --lyric-past:rgba(255,255,255,.26);
+    --lyric-cur:#ffffff;
+    --sung:#ffffff;
+    --unsung:rgba(255,255,255,.30);
+    --bar-line:rgba(255,255,255,.12);
+    --cover-bg:#1a1a1e;
+    --cover-line:rgba(255,255,255,.14);
+    --song:#ffffff;
+    --singer:rgba(255,255,255,.5);
+    --dots:rgba(255,255,255,.55);
+    --prog-track:rgba(255,255,255,.16);
+    --prog-fill:#ffffff;
+    --time:rgba(255,255,255,.45);
+  }
+  html[data-theme="light"] {
+    --bg:#fbfbfa;
+    --lyric-past:rgba(0,0,0,.24);
+    --lyric-cur:#111113;
+    --sung:#111113;
+    --unsung:rgba(0,0,0,.26);
+    --bar-line:rgba(0,0,0,.10);
+    --cover-bg:#eeeeec;
+    --cover-line:rgba(0,0,0,.12);
+    --song:#111113;
+    --singer:rgba(0,0,0,.45);
+    --dots:rgba(0,0,0,.5);
+    --prog-track:rgba(0,0,0,.12);
+    --prog-fill:#111113;
+    --time:rgba(0,0,0,.4);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body {
+    height:100%; overflow:hidden; background:var(--bg);
+    font-family:-apple-system,"SF Pro Display","PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    user-select:none; -webkit-user-select:none;
+  }
+  body { display:flex; flex-direction:column; }
+
+  /* ---------- 歌词滚动区 ---------- */
+  #stage {
+    flex:1; position:relative; overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 14%,#000 82%,transparent 100%);
+            mask-image:linear-gradient(180deg,transparent 0,#000 14%,#000 82%,transparent 100%);
+  }
+  #track {
+    position:absolute; left:0; right:0; padding:0 26px;
+    will-change:transform;
+    transition:transform .62s cubic-bezier(.22,.68,.32,1.02); /* 弹簧感：末端轻微过冲 */
+  }
+  .line {
+    padding:12px 0; cursor:pointer;
+    color:var(--lyric-past);
+    font-weight:700; letter-spacing:-.4px; line-height:1.26;
+    transform-origin:left center;
+    transition:color .5s ease, filter .55s ease, opacity .55s ease, transform .55s cubic-bezier(.22,.68,.32,1.02);
+  }
+  .line .sub {
+    display:block; font-size:.58em; font-weight:600; margin-top:5px;
+    opacity:.72; letter-spacing:0;
+  }
+  /* 景深：离当前行越远越小越淡越糊 */
+  .line[data-d="0"] { font-size:29px; color:var(--lyric-cur); filter:none;        opacity:1;   transform:scale(1); }
+  .line[data-d="1"] { font-size:23px;                          filter:blur(.4px);  opacity:.9;  transform:scale(.985); }
+  .line[data-d="2"] { font-size:22px;                          filter:blur(1.4px); opacity:.72; transform:scale(.97); }
+  .line[data-d="3"] { font-size:21px;                          filter:blur(2.6px); opacity:.5;  transform:scale(.95); }
+  .line[data-d="4"] { font-size:20px;                          filter:blur(4px);   opacity:.32; transform:scale(.93); }
+
+  /* 当前行呼吸浮动 */
+  .line[data-d="0"] { animation:breathe 4.2s ease-in-out infinite; }
+  @keyframes breathe {
+    0%,100% { transform:scale(1)   translateY(0); }
+    50%     { transform:scale(1.012) translateY(-1.5px); }
+  }
+
+  /* 逐字点亮（卡拉OK wipe） */
+  .line .word { color:var(--unsung); transition:color .12s linear; }
+  .line .word.on { color:var(--sung); }
+  .line[data-d="0"] .karaoke {
+    background:linear-gradient(90deg,var(--sung) 0%,var(--sung) var(--wipe,0%),var(--unsung) var(--wipe,0%),var(--unsung) 100%);
+    -webkit-background-clip:text; background-clip:text;
+    -webkit-text-fill-color:transparent; color:transparent;
+  }
+
+  /* 间奏三点 */
+  #interlude {
+    display:none; gap:13px; padding:14px 0; align-items:center;
+  }
+  #interlude.show { display:flex; }
+  #interlude i {
+    width:12px; height:12px; border-radius:50%; background:var(--lyric-cur);
+    opacity:.28; transform:scale(.8);
+    transition:opacity .25s ease, transform .25s ease;
+  }
+  #interlude i.lit { opacity:1; transform:scale(1.15); }
+
+  .empty {
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:var(--lyric-past); font-size:19px; font-weight:600; text-align:center; padding:0 40px;
+  }
+
+  /* ---------- 底部播放条 ---------- */
+  #bar {
+    flex-shrink:0; padding:18px 24px calc(22px + env(safe-area-inset-bottom));
+    border-top:1px solid var(--bar-line);
+  }
+  #barTop { display:flex; align-items:flex-start; gap:14px; }
+  #cover {
+    width:52px; height:52px; border-radius:11px; flex-shrink:0;
+    background:var(--cover-bg); border:1px solid var(--cover-line);
+    background-size:cover; background-position:center;
+  }
+  #meta { min-width:0; flex:1; display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  #metaText { min-width:0; }
+  #song { font-size:17px; font-weight:700; letter-spacing:-.3px; color:var(--song);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #singer { font-size:14px; font-weight:500; margin-top:3px; color:var(--singer);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #more {
+    flex-shrink:0; width:34px; height:30px; margin:-4px -8px 0 0;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--dots); font-size:22px; line-height:1; letter-spacing:1px; cursor:pointer;
+  }
+  #more:active { opacity:.5; }
+  #progWrap { margin-top:16px; cursor:pointer; padding:6px 0; }
+  #progTrack { height:3px; border-radius:2px; background:var(--prog-track); position:relative; }
+  #progFill { position:absolute; left:0; top:0; height:100%; width:0%; border-radius:2px; background:var(--prog-fill); }
+  #progFill::after { content:""; position:absolute; right:-4px; top:-2.5px; width:8px; height:8px; border-radius:50%; background:inherit; }
+  #time { display:flex; justify-content:space-between; margin-top:9px; color:var(--time);
+    font-size:12px; font-weight:500; font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <div id="track"></div>
+    <div id="interlude"><i></i><i></i><i></i></div>
+    <div class="empty" id="empty">正在获取歌词…</div>
+  </div>
+
+  <div id="bar">
+    <div id="barTop">
+      <div id="cover"></div>
+      <div id="meta">
+        <div id="metaText">
+          <div id="song">未在播放</div>
+          <div id="singer"></div>
+        </div>
+        <div id="more" title="更多">⋯</div>
+      </div>
+    </div>
+    <div id="progWrap"><div id="progTrack"><div id="progFill"></div></div></div>
+    <div id="time"><span id="tCur">0:00</span><span id="tDur">0:00</span></div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  var stage = document.getElementById('stage');
+  var trackEl = document.getElementById('track');
+  var interlude = document.getElementById('interlude');
+  var emptyEl = document.getElementById('empty');
+  var coverEl = document.getElementById('cover');
+  var songEl = document.getElementById('song');
+  var singerEl = document.getElementById('singer');
+  var moreEl = document.getElementById('more');
+  var progWrap = document.getElementById('progWrap');
+  var progFill = document.getElementById('progFill');
+  var tCur = document.getElementById('tCur');
+  var tDur = document.getElementById('tDur');
+
+  var lines = [];          // [{time, text, sub, words:[{t,word}]}]
+  var lineEls = [];
+  var activeIdx = -1;
+  var durationMs = 0;
+  var positionMs = 0;
+  var lastSyncWall = 0;    // performance.now() at last position update
+  var playing = false;
+  var showTranslation = true;
+
+  function fmt(ms){
+    if(!isFinite(ms)||ms<0)ms=0;
+    var s = Math.floor(ms/1000);
+    var m = Math.floor(s/60);
+    s = s%60;
+    return m + ':' + (s<10?'0':'') + s;
+  }
+
+  // ---- 原生调用入口 ----
+  function bridge(name){ try{ return window.LyricHomeNative && window.LyricHomeNative[name]; }catch(e){ return null; } }
+
+  moreEl.addEventListener('click', function(){
+    var fn = bridge('openMore');
+    if(fn) window.LyricHomeNative.openMore();
+    else alert('（demo）打开设置 / 更多菜单');
+  });
+
+  progWrap.addEventListener('click', function(ev){
+    if(durationMs<=0) return;
+    var rect = progWrap.getBoundingClientRect();
+    var ratio = Math.min(1, Math.max(0, (ev.clientX-rect.left)/rect.width));
+    var target = ratio*durationMs;
+    var fn = bridge('seekTo');
+    if(fn) window.LyricHomeNative.seekTo(target);
+    setPosition(target, playing);
+  });
+
+  // 点击某行 → seek 到该行时间
+  function onLineClick(idx){
+    var ln = lines[idx];
+    if(!ln || ln.time==null) return;
+    var fn = bridge('seekTo');
+    if(fn) window.LyricHomeNative.seekTo(ln.time);
+    setPosition(ln.time, playing);
+  }
+
+  // ---------- 渲染歌词行 ----------
+  function renderLines(){
+    trackEl.innerHTML = '';
+    lineEls = [];
+    lines.forEach(function(ln, i){
+      var el = document.createElement('div');
+      el.className = 'line';
+      el.setAttribute('data-d','4');
+      if(ln.words && ln.words.length){
+        var span = document.createElement('span');
+        span.className = 'karaoke';
+        span.textContent = ln.text;
+        el.appendChild(span);
+        el._karaoke = span;
+      } else {
+        el.appendChild(document.createTextNode(ln.text || ''));
+      }
+      if(ln.sub && showTranslation){
+        var sub = document.createElement('span');
+        sub.className = 'sub';
+        sub.textContent = ln.sub;
+        el.appendChild(sub);
+      }
+      el.addEventListener('click', function(){ onLineClick(i); });
+      trackEl.appendChild(el);
+      lineEls.push(el);
+    });
+    activeIdx = -1;
+  }
+
+  // ---------- 找当前行 ----------
+  function currentLineIndex(pos){
+    if(!lines.length) return -1;
+    var lo=0, hi=lines.length-1, ans=-1;
+    while(lo<=hi){
+      var mid=(lo+hi)>>1;
+      if(lines[mid].time<=pos){ ans=mid; lo=mid+1; }
+      else hi=mid-1;
+    }
+    return ans;
+  }
+
+  // ---------- 主循环：滚动 + 距离态 + 逐字 + 间奏 ----------
+  function estimatedPos(){
+    if(!playing) return positionMs;
+    return positionMs + (performance.now()-lastSyncWall);
+  }
+
+  function layout(pos){
+    if(!lines.length) return;
+    var idx = currentLineIndex(pos);
+
+    // 间奏检测：当前行与下一行间隔大 + 还没到下一行
+    var inInterlude = false, gapStart=0, gapEnd=0;
+    if(idx>=0){
+      var nextT = (idx+1<lines.length)? lines[idx+1].time : durationMs;
+      var curEnd = lines[idx].endTime || lines[idx].time;
+      // 若当前行有词尾时间，且距离下一行 > 5s，则算间奏
+      var gap = nextT - (curEnd||lines[idx].time);
+      if(gap>5000 && pos > (curEnd||lines[idx].time)+400 && pos < nextT-200){
+        inInterlude=true; gapStart=(curEnd||lines[idx].time); gapEnd=nextT;
+      }
+    } else {
+      // 开头前奏
+      if(lines.length && lines[0].time>4000 && pos < lines[0].time-200){
+        inInterlude=true; gapStart=0; gapEnd=lines[0].time;
+      }
+    }
+
+    if(activeIdx!==idx){
+      activeIdx = idx;
+      // 更新每行距离态
+      lineEls.forEach(function(el,i){
+        var d = Math.min(4, Math.abs(i-idx));
+        if(idx<0) d = Math.min(4, i+1);
+        el.setAttribute('data-d', String(d));
+      });
+      // 滚动：把当前行居中偏上（黄金位置约 38%）
+      var anchor = (idx>=0)? lineEls[idx] : (lineEls[0]||null);
+      if(anchor){
+        var target = stage.clientHeight*0.40 - anchor.offsetTop - anchor.offsetHeight/2;
+        trackEl.style.transform = 'translateY('+target+'px)';
+      }
+    }
+
+    // 逐字点亮
+    if(idx>=0){
+      var ln = lines[idx];
+      var el = lineEls[idx];
+      if(ln.words && ln.words.length && el._karaoke){
+        var last = ln.words[ln.words.length-1];
+        var lineStart = ln.words[0].t;
+        var lineEnd = ln.endTime || (last.t + (last.dur||600));
+        var wipe = Math.min(100, Math.max(0, (pos-lineStart)/(lineEnd-lineStart)*100));
+        el._karaoke.style.setProperty('--wipe', wipe+'%');
+      }
+    }
+
+    // 间奏三点
+    if(inInterlude){
+      interlude.classList.add('show');
+      // 三点位置跟着当前行
+      var anchorIdx = idx>=0?idx:0;
+      var anchorEl = lineEls[anchorIdx];
+      if(anchorEl){
+        var ty = anchorEl.offsetTop + anchorEl.offsetHeight + 4 +
+                 (parseFloat(trackEl.style.transform.replace(/[^\-0-9.]/g,''))||0);
+      }
+      var ratio = (pos-gapStart)/(gapEnd-gapStart);
+      var dots = interlude.children;
+      for(var k=0;k<3;k++){
+        dots[k].classList.toggle('lit', ratio > (k+0.5)/3);
+      }
+    } else {
+      interlude.classList.remove('show');
+    }
+  }
+
+  function tick(){
+    layout(estimatedPos());
+    requestAnimationFrame(tick);
+  }
+
+  // ---------- 进度条 + 时间 ----------
+  function paintProgress(pos){
+    var ratio = durationMs>0? Math.min(1,pos/durationMs) : 0;
+    progFill.style.width = (ratio*100)+'%';
+    tCur.textContent = fmt(pos);
+    tDur.textContent = fmt(durationMs);
+  }
+  setInterval(function(){ paintProgress(estimatedPos()); }, 250);
+
+  function setPosition(pos, isPlaying){
+    positionMs = pos; playing = !!isPlaying; lastSyncWall = performance.now();
+    paintProgress(pos);
+  }
+
+  // ===================================================================
+  //  公开 API（原生调用）
+  // ===================================================================
+  window.LyricHome = {
+    // 主题：'light' | 'dark'
+    setTheme: function(t){ document.documentElement.setAttribute('data-theme', t==='light'?'light':'dark'); },
+
+    // 播放信息快照：{track,artist,cover,positionMs,durationMs,state}
+    setSnapshot: function(s){
+      if(typeof s==='string'){ try{ s=JSON.parse(s); }catch(e){ return; } }
+      songEl.textContent = s.track || '未在播放';
+      singerEl.textContent = s.artist || '';
+      if(s.cover){ coverEl.style.backgroundImage='url("'+s.cover+'")'; }
+      else { coverEl.style.backgroundImage=''; }
+      durationMs = s.durationMs||0;
+      setPosition(s.positionMs||0, s.state==='playing');
+      if(!lines.length){ emptyEl.style.display = s.track? 'flex':'flex'; emptyEl.textContent = s.track? '正在获取歌词…' : '未在播放'; }
+    },
+
+    // 仅更新进度（高频，轻量）
+    setProgress: function(posMs, isPlaying){ setPosition(posMs, isPlaying); },
+
+    // 歌词：LyricLine[]  {time, text, sub?, words?:[{t,dur,word}], endTime?}
+    setLyrics: function(data){
+      if(typeof data==='string'){ try{ data=JSON.parse(data); }catch(e){ return; } }
+      lines = Array.isArray(data)? data : (data.lines||[]);
+      lines.sort(function(a,b){ return (a.time||0)-(b.time||0); });
+      if(lines.length){ emptyEl.style.display='none'; renderLines(); activeIdx=-1; }
+      else { emptyEl.style.display='flex'; emptyEl.textContent='暂无歌词'; trackEl.innerHTML=''; }
+    },
+
+    setShowTranslation: function(v){ showTranslation=!!v; if(lines.length) renderLines(); },
+
+    // 直接喂 LRC 文本（与 DirectLyricsRepository 输出一致）
+    //   lrc:        标准 LRC 逐行
+    //   translated: 翻译 LRC（可空）
+    //   wordLrc:    QRC 逐字（可空，形如 [start,dur]字...）
+    setLyricsFromLrc: function(lrc, translated, wordLrc){
+      var parsed = parseLrc(lrc||'');
+      var trans = parseLrc(translated||'');
+      var words = parseWordLrc(wordLrc||'');
+      // 翻译按时间戳贴到对应行
+      if(trans.length){
+        var tmap = {};
+        trans.forEach(function(t){ tmap[Math.round(t.time/10)] = t.text; });
+        parsed.forEach(function(p){
+          var k = Math.round(p.time/10);
+          if(tmap[k]) p.sub = tmap[k];
+        });
+      }
+      // 逐字：按行起始时间对齐并挂到对应行
+      if(words.length){
+        words.forEach(function(wl){
+          // 找时间最接近的行
+          var best=null, bestDiff=1e9;
+          for(var i=0;i<parsed.length;i++){
+            var d=Math.abs(parsed[i].time - wl.time);
+            if(d<bestDiff){ bestDiff=d; best=parsed[i]; }
+          }
+          if(best && bestDiff<1200){ best.words = wl.words; best.endTime = wl.endTime; }
+        });
+      }
+      window.LyricHome.setLyrics(parsed);
+    },
+
+    setShowTranslationFlag: function(v){ showTranslation=!!v; },
+
+    clear: function(){ lines=[]; lineEls=[]; trackEl.innerHTML=''; emptyEl.style.display='flex'; emptyEl.textContent='未在播放'; }
+  };
+
+  // ---------- LRC / QRC 解析 ----------
+  function parseLrc(text){
+    var out=[];
+    if(!text) return out;
+    var rows=text.split(/\r?\n/);
+    var re=/\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;
+    rows.forEach(function(row){
+      var stamps=[], m; re.lastIndex=0;
+      while((m=re.exec(row))!==null){
+        var mm=+m[1], ss=+m[2], frac=m[3]?m[3]:'0';
+        var ms = mm*60000 + ss*1000 + Math.round(parseFloat('0.'+frac)*1000);
+        stamps.push(ms);
+      }
+      if(!stamps.length) return;
+      var txt=row.replace(re,'').trim();
+      if(!txt) return;
+      stamps.forEach(function(t){ out.push({time:t, text:txt}); });
+    });
+    out.sort(function(a,b){ return a.time-b.time; });
+    return out;
+  }
+
+  // QRC 逐字： 行头 [start,dur] 后跟  文字(start,dur) 序列
+  function parseWordLrc(text){
+    var out=[];
+    if(!text) return out;
+    var rows=text.split(/\r?\n/);
+    var lineRe=/^\[(\d+),(\d+)\]/;
+    var wordRe=/([^(]*)\((\d+),(\d+)\)/g;
+    rows.forEach(function(row){
+      var lm=row.match(lineRe);
+      if(!lm) return;
+      var lineStart=+lm[1], lineDur=+lm[2];
+      var body=row.slice(lm[0].length);
+      var words=[], wm; wordRe.lastIndex=0; var txt='';
+      while((wm=wordRe.exec(body))!==null){
+        var w=wm[1];
+        if(w==='') continue;
+        words.push({t:+wm[2], dur:+wm[3], word:w});
+        txt+=w;
+      }
+      if(!words.length) return;
+      out.push({time:lineStart, endTime:lineStart+lineDur, text:txt, words:words});
+    });
+    return out;
+  }
+
+  requestAnimationFrame(tick);
+
+  // ===================================================================
+  //  浏览器 demo（无原生时自动跑一段，方便预览）
+  // ===================================================================
+  if(!bridge('openMore')){
+    document.documentElement.setAttribute('data-theme','dark');
+    var demo = [
+      {time:0,    text:'窗外的麻雀 在电线杆上多嘴'},
+      {time:3200, text:'你说这一句 很有夏天的感觉'},
+      {time:6800, text:'阳光洒在 走过的青石板街'},
+      {time:10200, text:'教室前 漫长的台阶', sub:'The long steps before the classroom',
+        words:[{t:10200,dur:500,word:'教'},{t:10700,dur:500,word:'室'},{t:11200,dur:600,word:'前'},
+               {t:12000,dur:400,word:'漫'},{t:12400,dur:400,word:'长'},{t:12800,dur:300,word:'的'},
+               {t:13100,dur:500,word:'台'},{t:13600,dur:900,word:'阶'}], endTime:14500},
+      {time:15000, text:'我踮起脚尖 靠近你一点'},
+      {time:18600, text:'风扬起 你发梢的思念'},
+      {time:22200, text:'整个夏天 都是你的侧脸'},
+      {time:26000, text:'时光在这里 停格成永远'}
+    ];
+    window.LyricHome.setSnapshot({track:'一千零一夜',artist:'黄霄雲',durationMs:197000,positionMs:10200,state:'playing'});
+    window.LyricHome.setLyrics(demo);
+    // demo 时间推进
+    var base = performance.now(), start=10200;
+    setInterval(function(){
+      var p = start + (performance.now()-base);
+      if(p>30000){ base=performance.now(); }
+      window.LyricHome.setProgress(p, true);
+    }, 200);
+  }
+})();
+</script>
+</body>
+</html>

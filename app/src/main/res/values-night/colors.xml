@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 黑白灰扁平配色 · 暗色 (values-night/) -->
+    <color name="app_bg">#0A0A0B</color>
+    <color name="app_surface">#161619</color>
+    <color name="app_line">#2A2A30</color>
+    <color name="app_line_soft">#202024</color>
+    <color name="text_primary">#F2F2F4</color>
+    <color name="text_secondary">#A0A0A8</color>
+    <color name="text_tertiary">#6B6B76</color>
+    <color name="text_on_accent">#0A0A0B</color>
+    <color name="accent">#FFFFFF</color>          <!-- 暗色主操作=白 -->
+    <color name="accent_pressed">#D4D4D8</color>
+    <color name="control_track">#2E2E34</color>
+    <color name="control_active">#FFFFFF</color>
+    <color name="nav_bar">#0A0A0B</color>
+    <color name="status_bar">#0A0A0B</color>
+</resources>

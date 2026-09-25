@@ -1,753 +1,396 @@
 package com.tcrrry.desktoplyrics
 
-import android.app.Dialog
-import android.content.BroadcastReceiver
+import android.annotation.SuppressLint
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.ColorDrawable
-import android.net.Uri
+import android.media.MediaMetadata
+import android.media.session.MediaController
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
 import android.view.View
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Button
-import android.widget.SeekBar
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
+/**
+ * 主页 = 全屏 Apple Music 风格歌词页。
+ * WebView 加载 home_lyrics.html，本 Activity 负责：
+ *   - 读取当前 MediaSession（标题/歌手/封面/进度）
+ *   - 用 DirectLyricsRepository 拉歌词并喂给页面
+ *   - 底部 ⋯ / 权限浮层的“设置”入口进入 SettingsActivity
+ *   - 应用主题（跟随/亮/暗）
+ * 悬浮窗仍由 LyricsOverlayService 负责，本页只做“播放器歌词页”。
+ */
 class MainActivity : AppCompatActivity() {
+
+    private lateinit var web: WebView
+    private lateinit var gate: View
+    private lateinit var gateStatus: TextView
 
     private val overlayPrefs by lazy {
         getSharedPreferences(LyricsOverlayService.PREFS_NAME, Context.MODE_PRIVATE)
     }
+    private val appPrefs by lazy {
+        getSharedPreferences(ThemePrefs.PREFS, Context.MODE_PRIVATE)
+    }
 
-    private lateinit var btnOverlay: Button
-    private lateinit var btnOverlayPermission: Button
-    private lateinit var btnListenerPermission: Button
-    private lateinit var tvOverlayStatus: TextView
-    private lateinit var tvRuntimeBadge: TextView
-    private lateinit var backgroundModeTransparent: TextView
-    private lateinit var backgroundModeLow: TextView
-    private lateinit var backgroundModeMedium: TextView
-    private lateinit var backgroundModeHigh: TextView
-    private lateinit var settingsTargetExpanded: TextView
-    private lateinit var settingsTargetCompact: TextView
-    private lateinit var seekFontSize: SeekBar
-    private lateinit var fontSizeValue: TextView
-    private lateinit var seekLyricOffset: SeekBar
-    private lateinit var lyricOffsetValue: TextView
-    private lateinit var translationOriginal: TextView
-    private lateinit var translationBilingual: TextView
-    private lateinit var translationTranslated: TextView
-    private lateinit var lyricColorWhite: TextView
-    private lateinit var lyricColorBlue: TextView
-    private lateinit var lyricColorBlack: TextView
-    private lateinit var lyricColorPink: TextView
-    private lateinit var lyricColorCustom: TextView
-    private lateinit var updateNoticePanel: View
-    private lateinit var updateNoticeTitle: TextView
-    private lateinit var updateNoticeSummary: TextView
-    private lateinit var updateViewButton: Button
-    private lateinit var updateLaterButton: Button
-    private lateinit var updateIgnoreButton: Button
-    private lateinit var versionCheckButton: TextView
-    private var availableRelease: UpdateChecker.Release? = null
-    private var settingsTargetIsCompact = false
-    private var overlayStateReceiverRegistered = false
+    private val sessionManager by lazy {
+        getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+    }
+    private val listenerComponent by lazy {
+        ComponentName(this, MediaListenerService::class.java)
+    }
 
-    private val overlayStateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == LyricsOverlayService.ACTION_STATE_CHANGED &&
-                ::tvOverlayStatus.isInitialized
-            ) {
-                updateOverlayUi()
-            }
+    private val repository = DirectLyricsRepository()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val ioScope = CoroutineScope(Dispatchers.IO + Job())
+
+    private var webReady = false
+    private var controller: MediaController? = null
+    private var lastTrackKey = ""
+    private var lyricRequestId = 0
+
+    private val controllerCallback = object : MediaController.Callback() {
+        override fun onMetadataChanged(metadata: MediaMetadata?) = pushSnapshot()
+        override fun onPlaybackStateChanged(state: PlaybackState?) = pushSnapshot()
+        override fun onSessionDestroyed() { controller = null; pushSnapshot() }
+    }
+
+    private val sessionsChangedListener =
+        MediaSessionManager.OnActiveSessionsChangedListener { refreshController() }
+
+    // 高频进度推送
+    private val progressTick = object : Runnable {
+        override fun run() {
+            pushProgressOnly()
+            mainHandler.postDelayed(this, 500)
         }
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 主题先于 setContentView
+        ThemePrefs.apply(appPrefs.getString(ThemePrefs.KEY, ThemePrefs.FOLLOW))
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        findViewById<Button>(R.id.btn_manage_lyric_sources).setOnClickListener {
-            startActivity(Intent(this, LyricSourceManagerActivity::class.java))
-        }
-        findViewById<Button>(R.id.btn_supplement_translation).setOnClickListener {
-            startActivity(Intent(this, TranslationSettingsActivity::class.java))
-        }
-        findViewById<Button>(R.id.btn_manage_lyric_offsets).setOnClickListener {
-            startActivity(Intent(this, LyricOffsetMemoryActivity::class.java))
-        }
 
-        btnOverlay = findViewById(R.id.btn_overlay)
-        btnOverlayPermission = findViewById(R.id.btn_overlay_permission)
-        btnListenerPermission = findViewById(R.id.btn_listener_permission)
-        tvOverlayStatus = findViewById(R.id.tv_overlay_status)
-        tvRuntimeBadge = findViewById(R.id.tv_runtime_badge)
-        backgroundModeTransparent = findViewById(R.id.background_mode_transparent)
-        backgroundModeLow = findViewById(R.id.background_mode_low)
-        backgroundModeMedium = findViewById(R.id.background_mode_medium)
-        backgroundModeHigh = findViewById(R.id.background_mode_high)
-        settingsTargetExpanded = findViewById(R.id.settings_target_expanded)
-        settingsTargetCompact = findViewById(R.id.settings_target_compact)
-        seekFontSize = findViewById(R.id.seek_font_size)
-        fontSizeValue = findViewById(R.id.font_size_value)
-        seekLyricOffset = findViewById(R.id.seek_lyric_offset)
-        lyricOffsetValue = findViewById(R.id.lyric_offset_value)
-        translationOriginal = findViewById(R.id.translation_original)
-        translationBilingual = findViewById(R.id.translation_bilingual)
-        translationTranslated = findViewById(R.id.translation_translated)
-        lyricColorWhite = findViewById(R.id.lyric_color_white)
-        lyricColorBlue = findViewById(R.id.lyric_color_blue)
-        lyricColorBlack = findViewById(R.id.lyric_color_black)
-        lyricColorPink = findViewById(R.id.lyric_color_pink)
-        lyricColorCustom = findViewById(R.id.lyric_color_custom)
-        updateNoticePanel = findViewById(R.id.update_notice_panel)
-        updateNoticeTitle = findViewById(R.id.update_notice_title)
-        updateNoticeSummary = findViewById(R.id.update_notice_summary)
-        updateViewButton = findViewById(R.id.update_view_button)
-        updateLaterButton = findViewById(R.id.update_later_button)
-        updateIgnoreButton = findViewById(R.id.update_ignore_button)
-        versionCheckButton = findViewById(R.id.version_check_button)
-        versionCheckButton.text = "当前版本 $currentVersionName · 检查更新"
-        versionCheckButton.setOnClickListener { checkForUpdates(manual = true) }
-        updateViewButton.setOnClickListener {
-            val url = availableRelease?.pageUrl ?: UpdateChecker.RELEASES_LATEST_URL
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        web = findViewById(R.id.lyric_web)
+        gate = findViewById(R.id.gate_overlay)
+        gateStatus = findViewById(R.id.gate_status)
+
+        web.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
         }
-        updateLaterButton.setOnClickListener { updateNoticePanel.visibility = View.GONE }
-        updateIgnoreButton.setOnClickListener {
-            availableRelease?.tag?.let {
-                updatePrefs.edit().putString(PREF_IGNORED_RELEASE, it).apply()
+        web.setBackgroundColor(0)
+        web.addJavascriptInterface(HomeBridge(), "LyricHomeNative")
+        web.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                webReady = true
+                applyThemeToWeb()
+                pushSnapshot()
             }
-            updateNoticePanel.visibility = View.GONE
-            Toast.makeText(this, "已忽略此版本，后续新版本仍会提醒", Toast.LENGTH_SHORT).show()
         }
-        seekFontSize.max = LyricsOverlayService.FONT_SCALE_MAX_PERCENT -
-            LyricsOverlayService.FONT_SCALE_MIN_PERCENT
+        web.loadUrl("file:///android_asset/home_lyrics.html")
 
-        btnListenerPermission.setOnClickListener {
+        // 权限浮层按钮
+        findViewById<Button>(R.id.gate_listener).setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
-
-        btnOverlayPermission.setOnClickListener {
+        findViewById<Button>(R.id.gate_overlay_perm).setOnClickListener {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 startActivity(
                     Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
+                        android.net.Uri.parse("package:$packageName")
                     )
                 )
             }
         }
-
-        btnOverlay.setOnClickListener {
-            if (LyricsOverlayService.isRunning) {
-                stopService(Intent(this, LyricsOverlayService::class.java).apply {
-                    action = LyricsOverlayService.ACTION_STOP
-                })
-                btnOverlay.postDelayed({ updateOverlayUi() }, 250)
-                return@setOnClickListener
-            }
-
-            if (!hasNotificationListenerAccess()) {
-                Toast.makeText(this, "请先授予通知使用权，用于读取 MediaSession", Toast.LENGTH_LONG).show()
-                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                return@setOnClickListener
-            }
-            if (!Settings.canDrawOverlays(this)) {
-                Toast.makeText(this, "请先允许显示悬浮窗", Toast.LENGTH_LONG).show()
-                startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                )
-                return@setOnClickListener
-            }
-
-            startLyricsOverlay()
-        }
-
-        backgroundModeTransparent.setOnClickListener {
-            setBackgroundMode(LyricsOverlayService.BACKGROUND_TRANSPARENT)
-        }
-        backgroundModeLow.setOnClickListener {
-            setBackgroundMode(LyricsOverlayService.BACKGROUND_LOW)
-        }
-        backgroundModeMedium.setOnClickListener {
-            setBackgroundMode(LyricsOverlayService.BACKGROUND_MEDIUM)
-        }
-        backgroundModeHigh.setOnClickListener {
-            setBackgroundMode(LyricsOverlayService.BACKGROUND_HIGH)
-        }
-        settingsTargetExpanded.setOnClickListener { setSettingsTarget(false) }
-        settingsTargetCompact.setOnClickListener { setSettingsTarget(true) }
-
-        updateSettingsTargetUi()
-        updateBackgroundModeUi()
-        updateFontSizeUi()
-        seekFontSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                val percent = LyricsOverlayService.FONT_SCALE_MIN_PERCENT + progress
-                fontSizeValue.text = "$percent%"
-                if (fromUser) setFontScale(percent)
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
-            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
-        })
-        seekLyricOffset.max = 100
-        seekLyricOffset.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                val offsetMs = LyricsOverlayService.LYRIC_OFFSET_MIN_MS + progress * 100
-                lyricOffsetValue.text = formatOffset(offsetMs)
-                if (fromUser) setLyricOffset(offsetMs)
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
-            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
-        })
-
-        translationOriginal.setOnClickListener {
-            setTranslationMode(LyricsOverlayService.TRANSLATION_ORIGINAL)
-        }
-        translationBilingual.setOnClickListener {
-            setTranslationMode(LyricsOverlayService.TRANSLATION_BILINGUAL)
-        }
-        translationTranslated.setOnClickListener {
-            setTranslationMode(LyricsOverlayService.TRANSLATION_TRANSLATED)
-        }
-
-        listOf(
-            lyricColorWhite to "#FFFFFF",
-            lyricColorBlue to "#9FD8FF",
-            lyricColorBlack to "#111111",
-            lyricColorPink to "#FFB6D5"
-        ).forEach { (option, color) -> option.setOnClickListener { setLyricColor(color) } }
-        lyricColorCustom.setOnClickListener { showColorPickerDialog() }
-        updateLyricOffsetUi()
-        updateTranslationModeUi()
-        updateLyricColorUi()
-        updateOverlayUi()
-        checkForUpdates(manual = false)
-    }
-
-    override fun onStart() {
-        super.onStart()
-        if (!overlayStateReceiverRegistered) {
-            ContextCompat.registerReceiver(
-                this,
-                overlayStateReceiver,
-                IntentFilter(LyricsOverlayService.ACTION_STATE_CHANGED),
-                ContextCompat.RECEIVER_NOT_EXPORTED
-            )
-            overlayStateReceiverRegistered = true
-        }
-        updateOverlayUi()
-    }
-
-    override fun onStop() {
-        if (overlayStateReceiverRegistered) {
-            unregisterReceiver(overlayStateReceiver)
-            overlayStateReceiverRegistered = false
-        }
-        super.onStop()
+        findViewById<Button>(R.id.gate_start).setOnClickListener { tryStartOverlay() }
+        findViewById<TextView>(R.id.gate_settings_link).setOnClickListener { openSettings() }
     }
 
     override fun onResume() {
         super.onResume()
-        if (::tvOverlayStatus.isInitialized) {
-            updateOverlayUi()
-            updateBackgroundModeUi()
-            updateFontSizeUi()
-            updateLyricOffsetUi()
-            updateTranslationModeUi()
-            updateLyricColorUi()
+        ThemePrefs.apply(appPrefs.getString(ThemePrefs.KEY, ThemePrefs.FOLLOW))
+        updateGate()
+        startSessionMonitor()
+        mainHandler.post(progressTick)
+        if (webReady) { applyThemeToWeb(); pushSnapshot() }
+    }
+
+    override fun onPause() {
+        mainHandler.removeCallbacks(progressTick)
+        stopSessionMonitor()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        ioScope.coroutineContext[Job]?.cancel()
+        super.onDestroy()
+    }
+
+    // ---------- 权限浮层 ----------
+    private fun hasListener(): Boolean =
+        NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+
+    private fun hasOverlay(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
+
+    private fun updateGate() {
+        val listenerOk = hasListener()
+        val overlayOk = hasOverlay()
+        // 只要有通知使用权就能读歌显示歌词页；两者都齐才能开悬浮窗
+        if (listenerOk) {
+            gate.visibility = View.GONE
+        } else {
+            gate.visibility = View.VISIBLE
+            gateStatus.text = when {
+                !listenerOk && !overlayOk -> "需要通知使用权读取播放信息；开悬浮窗还需悬浮窗权限"
+                !listenerOk -> "需要通知使用权，用于读取当前播放的歌曲信息"
+                else -> "准备就绪"
+            }
         }
     }
 
-    private fun startLyricsOverlay() {
+    private fun tryStartOverlay() {
+        if (!hasListener()) {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); return
+        }
+        if (!hasOverlay()) {
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    android.net.Uri.parse("package:$packageName")
+                )
+            ); return
+        }
         ContextCompat.startForegroundService(
             this,
             Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_START
             }
         )
-        btnOverlay.postDelayed({ updateOverlayUi() }, 250)
+        updateGate()
     }
 
-    private fun hasNotificationListenerAccess(): Boolean =
-        NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+    private fun openSettings() = startActivity(Intent(this, SettingsActivity::class.java))
 
-    private fun setBackgroundMode(mode: String) {
-        val normalized = when (mode) {
-            LyricsOverlayService.BACKGROUND_LOW -> LyricsOverlayService.BACKGROUND_LOW
-            LyricsOverlayService.BACKGROUND_MEDIUM -> LyricsOverlayService.BACKGROUND_MEDIUM
-            LyricsOverlayService.BACKGROUND_HIGH -> LyricsOverlayService.BACKGROUND_HIGH
-            else -> LyricsOverlayService.BACKGROUND_TRANSPARENT
-        }
-        overlayPrefs.edit()
-            .putString(backgroundPreferenceKey(), normalized)
-            .apply()
-        updateBackgroundModeUi()
-
-        if (LyricsOverlayService.isRunning) {
-            startService(Intent(this, LyricsOverlayService::class.java).apply {
-                action = LyricsOverlayService.ACTION_SET_BACKGROUND
-                putExtra(LyricsOverlayService.EXTRA_BACKGROUND_MODE, normalized)
-                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, settingsTargetIsCompact)
-            })
+    // ---------- MediaSession ----------
+    private var monitoring = false
+    private fun startSessionMonitor() {
+        if (monitoring) return
+        if (!hasListener()) return
+        try {
+            sessionManager.addOnActiveSessionsChangedListener(sessionsChangedListener, listenerComponent)
+            monitoring = true
+            refreshController()
+        } catch (_: SecurityException) {
+            // 无通知使用权
         }
     }
 
-    private fun setFontScale(percent: Int) {
-        val normalized = percent.coerceIn(
-            LyricsOverlayService.FONT_SCALE_MIN_PERCENT,
-            LyricsOverlayService.FONT_SCALE_MAX_PERCENT
-        )
-        val previous = overlayPrefs.getInt(
-            fontScalePreferenceKey(),
-            expandedFontScale()
-        ).coerceIn(
-            LyricsOverlayService.FONT_SCALE_MIN_PERCENT,
-            LyricsOverlayService.FONT_SCALE_MAX_PERCENT
-        )
-        val editor = overlayPrefs.edit().putInt(fontScalePreferenceKey(), normalized)
-        if (settingsTargetIsCompact) {
-            val density = resources.displayMetrics.density
-            fun minHeightPx(value: Int): Int =
-                (LyricsOverlayService.compactMinimumHeightDp(value) * density + 0.5f).toInt()
-            val storedHeight = overlayPrefs.getInt("compact_height_v3", (48 * density + 0.5f).toInt())
-            val previousMin = minHeightPx(previous)
-            val nextMin = minHeightPx(normalized)
-            val adjustedHeight = if (storedHeight <= previousMin + (2 * density + 0.5f).toInt()) {
-                nextMin
-            } else {
-                maxOf(storedHeight, nextMin)
-            }
-            editor.putInt("compact_height_v3", adjustedHeight)
-        }
-        editor.apply()
-        fontSizeValue.text = "$normalized%"
-
-        if (LyricsOverlayService.isRunning) {
-            startService(Intent(this, LyricsOverlayService::class.java).apply {
-                action = LyricsOverlayService.ACTION_SET_FONT_SCALE
-                putExtra(LyricsOverlayService.EXTRA_FONT_SCALE_PERCENT, normalized)
-                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, settingsTargetIsCompact)
-            })
-        }
+    private fun stopSessionMonitor() {
+        if (!monitoring) return
+        try { sessionManager.removeOnActiveSessionsChangedListener(sessionsChangedListener) } catch (_: Exception) {}
+        controller?.unregisterCallback(controllerCallback)
+        monitoring = false
     }
 
-    private fun updateFontSizeUi() {
-        val percent = overlayPrefs.getInt(
-            fontScalePreferenceKey(),
-            expandedFontScale()
-        ).coerceIn(
-            LyricsOverlayService.FONT_SCALE_MIN_PERCENT,
-            LyricsOverlayService.FONT_SCALE_MAX_PERCENT
-        )
-        fontSizeValue.text = "$percent%"
-        seekFontSize.progress = percent - LyricsOverlayService.FONT_SCALE_MIN_PERCENT
+    private fun refreshController() {
+        val best = try {
+            sessionManager.getActiveSessions(listenerComponent)
+        } catch (_: SecurityException) { emptyList() }
+            .asSequence()
+            .filter { it.packageName != packageName }
+            .maxByOrNull { score(it) }
+
+        if (best?.sessionToken == controller?.sessionToken) { pushSnapshot(); return }
+        controller?.unregisterCallback(controllerCallback)
+        controller = best
+        best?.registerCallback(controllerCallback, mainHandler)
+        pushSnapshot()
     }
 
-    private fun updateBackgroundModeUi() {
-        val selectedMode = overlayPrefs.getString(
-            backgroundPreferenceKey(),
-            expandedBackgroundMode()
-        )
-
-        listOf(
-            backgroundModeTransparent to LyricsOverlayService.BACKGROUND_TRANSPARENT,
-            backgroundModeLow to LyricsOverlayService.BACKGROUND_LOW,
-            backgroundModeMedium to LyricsOverlayService.BACKGROUND_MEDIUM,
-            backgroundModeHigh to LyricsOverlayService.BACKGROUND_HIGH
-        ).forEach { (option, mode) ->
-            val selected = selectedMode == mode || (
-                selectedMode !in setOf(
-                    LyricsOverlayService.BACKGROUND_TRANSPARENT,
-                    LyricsOverlayService.BACKGROUND_LOW,
-                    LyricsOverlayService.BACKGROUND_MEDIUM,
-                    LyricsOverlayService.BACKGROUND_HIGH
-                ) && mode == LyricsOverlayService.BACKGROUND_DEFAULT
-            )
-            option.setBackgroundResource(
-                if (selected) R.drawable.bg_ui_segment_selected else android.R.color.transparent
-            )
-            option.setTextColor(
-                android.graphics.Color.parseColor(if (selected) "#202331" else "#9DA4B5")
-            )
-            option.typeface = android.graphics.Typeface.create(
-                "sans-serif",
-                if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
-            )
+    private fun score(c: MediaController): Int {
+        val s = when (c.playbackState?.state) {
+            PlaybackState.STATE_PLAYING -> 1000
+            PlaybackState.STATE_BUFFERING, PlaybackState.STATE_CONNECTING -> 800
+            PlaybackState.STATE_PAUSED -> 600
+            else -> 100
         }
+        val hasTitle = !c.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).isNullOrBlank()
+        return s + if (hasTitle) 100 else 0
     }
 
-    private fun setLyricOffset(value: Int) {
-        val normalized = value.coerceIn(
-            LyricsOverlayService.LYRIC_OFFSET_MIN_MS,
-            LyricsOverlayService.LYRIC_OFFSET_MAX_MS
-        )
-        overlayPrefs.edit().putInt(LyricsOverlayService.PREF_LYRIC_OFFSET_MS, normalized).apply()
-        lyricOffsetValue.text = formatOffset(normalized)
-        seekLyricOffset.progress = (normalized - LyricsOverlayService.LYRIC_OFFSET_MIN_MS) / 100
-        if (LyricsOverlayService.isRunning) {
-            startService(Intent(this, LyricsOverlayService::class.java).apply {
-                action = LyricsOverlayService.ACTION_SET_LYRIC_OFFSET
-                putExtra(LyricsOverlayService.EXTRA_LYRIC_OFFSET_MS, normalized)
-            })
+    private fun positionOf(state: PlaybackState?, duration: Long): Long {
+        if (state == null) return 0L
+        var pos = state.position.coerceAtLeast(0L)
+        if (state.state == PlaybackState.STATE_PLAYING && state.playbackSpeed > 0f) {
+            val elapsed = (SystemClock.elapsedRealtime() - state.lastPositionUpdateTime).coerceAtLeast(0L)
+            pos += (elapsed * state.playbackSpeed).toLong()
         }
+        return if (duration > 0) pos.coerceAtMost(duration) else pos
     }
 
-    private fun updateLyricOffsetUi() {
-        val value = (LyricsOverlayService.instance?.currentLyricOffsetMs()
-            ?: overlayPrefs.getInt(LyricsOverlayService.PREF_LYRIC_OFFSET_MS, 0))
-            .coerceIn(LyricsOverlayService.LYRIC_OFFSET_MIN_MS, LyricsOverlayService.LYRIC_OFFSET_MAX_MS)
-        lyricOffsetValue.text = formatOffset(value)
-        seekLyricOffset.progress = (value - LyricsOverlayService.LYRIC_OFFSET_MIN_MS) / 100
+    private fun firstString(md: MediaMetadata?, vararg keys: String): String {
+        if (md == null) return ""
+        for (k in keys) md.getString(k)?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        return ""
     }
 
-    private fun formatOffset(value: Int): String = String.format(
-        java.util.Locale.ROOT,
-        "%+.1fs",
-        value / 1000f
-    )
-
-    private fun setTranslationMode(mode: String) {
-        val normalized = when (mode) {
-            LyricsOverlayService.TRANSLATION_ORIGINAL -> LyricsOverlayService.TRANSLATION_ORIGINAL
-            LyricsOverlayService.TRANSLATION_TRANSLATED -> LyricsOverlayService.TRANSLATION_TRANSLATED
-            else -> LyricsOverlayService.TRANSLATION_BILINGUAL
-        }
-        overlayPrefs.edit().putString(LyricsOverlayService.PREF_TRANSLATION_MODE, normalized).apply()
-        updateTranslationModeUi()
-        if (LyricsOverlayService.isRunning) {
-            startService(Intent(this, LyricsOverlayService::class.java).apply {
-                action = LyricsOverlayService.ACTION_SET_TRANSLATION_MODE
-                putExtra(LyricsOverlayService.EXTRA_TRANSLATION_MODE, normalized)
-            })
-        }
-    }
-
-    private fun updateTranslationModeUi() {
-        val selected = overlayPrefs.getString(
-            LyricsOverlayService.PREF_TRANSLATION_MODE,
-            LyricsOverlayService.TRANSLATION_BILINGUAL
-        )
-        updateSegmentOptions(
-            listOf(
-                translationOriginal to LyricsOverlayService.TRANSLATION_ORIGINAL,
-                translationBilingual to LyricsOverlayService.TRANSLATION_BILINGUAL,
-                translationTranslated to LyricsOverlayService.TRANSLATION_TRANSLATED
-            ),
-            selected.orEmpty()
-        )
-    }
-
-    private fun setLyricColor(color: String) {
-        overlayPrefs.edit().putString(lyricColorPreferenceKey(), color).apply()
-        updateLyricColorUi()
-        if (LyricsOverlayService.isRunning) {
-            startService(Intent(this, LyricsOverlayService::class.java).apply {
-                action = LyricsOverlayService.ACTION_SET_LYRIC_COLOR
-                putExtra(LyricsOverlayService.EXTRA_LYRIC_COLOR, color)
-                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, settingsTargetIsCompact)
-            })
-        }
-    }
-
-    private fun updateLyricColorUi() {
-        val selected = overlayPrefs.getString(
-            lyricColorPreferenceKey(),
-            expandedLyricColor()
-        ).orEmpty()
-        val options = listOf(
-            lyricColorWhite to "#FFFFFF",
-            lyricColorBlue to "#9FD8FF",
-            lyricColorBlack to "#111111",
-            lyricColorPink to "#FFB6D5"
-        )
-        options.forEach { (option, color) ->
-            val isSelected = color.equals(selected, ignoreCase = true)
-            option.setBackgroundResource(
-                if (isSelected) R.drawable.bg_ui_segment_selected else android.R.color.transparent
-            )
-            option.setTextColor(
-                Color.parseColor(
-                    if (isSelected) "#202331"
-                    else if (color == "#111111") "#AEB3BF"
-                    else color
-                )
-            )
-            option.alpha = if (isSelected) 1f else 0.62f
-        }
-        val normalized = selected.uppercase(java.util.Locale.ROOT)
-        val isCustom = options.none { (_, color) -> color == normalized }
-        val customLabel = "无级调色 · $normalized"
-        lyricColorCustom.text = SpannableString(customLabel).apply {
-            val valueStart = customLabel.lastIndexOf(normalized)
-            val actualColor = runCatching { Color.parseColor(normalized) }.getOrDefault(Color.WHITE)
-            setSpan(
-                ForegroundColorSpan(actualColor),
-                valueStart,
-                customLabel.length,
-                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-            )
-        }
-        lyricColorCustom.setBackgroundResource(
-            if (isCustom) R.drawable.bg_ui_segment_selected else R.drawable.bg_ui_pill
-        )
-        lyricColorCustom.setTextColor(Color.parseColor("#F7F7FA"))
-    }
-
-    private fun showColorPickerDialog() {
-        val picker = layoutInflater.inflate(R.layout.dialog_color_picker, null)
-        val preview = picker.findViewById<TextView>(R.id.color_picker_preview)
-        val red = picker.findViewById<SeekBar>(R.id.seek_color_red)
-        val green = picker.findViewById<SeekBar>(R.id.seek_color_green)
-        val blue = picker.findViewById<SeekBar>(R.id.seek_color_blue)
-        val redValue = picker.findViewById<TextView>(R.id.color_red_value)
-        val greenValue = picker.findViewById<TextView>(R.id.color_green_value)
-        val blueValue = picker.findViewById<TextView>(R.id.color_blue_value)
-        val initialHex = overlayPrefs.getString(
-            lyricColorPreferenceKey(),
-            expandedLyricColor()
-        ).orEmpty().takeIf { Regex("^#[0-9A-Fa-f]{6}$").matches(it) }
-            ?: LyricsOverlayService.LYRIC_COLOR_DEFAULT
-        val initial = Color.parseColor(initialHex)
-        red.progress = Color.red(initial)
-        green.progress = Color.green(initial)
-        blue.progress = Color.blue(initial)
-        var selectedHex = initialHex.uppercase(java.util.Locale.ROOT)
-
-        fun updatePreview() {
-            val r = red.progress
-            val g = green.progress
-            val b = blue.progress
-            selectedHex = String.format(java.util.Locale.ROOT, "#%02X%02X%02X", r, g, b)
-            redValue.text = r.toString()
-            greenValue.text = g.toString()
-            blueValue.text = b.toString()
-            preview.text = selectedHex
-            preview.setTextColor(if (r * 299 + g * 587 + b * 114 > 150_000) Color.BLACK else Color.WHITE)
-            preview.background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = 18f * resources.displayMetrics.density
-                setColor(Color.rgb(r, g, b))
-                setStroke((resources.displayMetrics.density + .5f).toInt(), Color.parseColor("#33FFFFFF"))
-            }
-        }
-
-        val listener = object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                updatePreview()
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
-            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
-        }
-        red.setOnSeekBarChangeListener(listener)
-        green.setOnSeekBarChangeListener(listener)
-        blue.setOnSeekBarChangeListener(listener)
-        updatePreview()
-
-        val dialog = Dialog(this).apply {
-            setContentView(picker)
-            window?.apply {
-                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-                setDimAmount(.64f)
-                addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            }
-        }
-        picker.findViewById<Button>(R.id.color_picker_cancel).setOnClickListener { dialog.dismiss() }
-        picker.findViewById<Button>(R.id.color_picker_apply).setOnClickListener {
-            setLyricColor(selectedHex)
-            dialog.dismiss()
-        }
-        dialog.show()
-        dialog.window?.setLayout(
-            resources.displayMetrics.widthPixels - (36 * resources.displayMetrics.density).toInt(),
-            android.view.WindowManager.LayoutParams.WRAP_CONTENT
-        )
-    }
-
-    private fun updateSegmentOptions(options: List<Pair<TextView, String>>, selected: String) {
-        options.forEach { (option, value) ->
-            val isSelected = value == selected
-            option.setBackgroundResource(
-                if (isSelected) R.drawable.bg_ui_segment_selected else android.R.color.transparent
-            )
-            option.setTextColor(
-                android.graphics.Color.parseColor(if (isSelected) "#202331" else "#9DA4B5")
-            )
-            option.typeface = android.graphics.Typeface.create(
-                "sans-serif",
-                if (isSelected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
-            )
-        }
-    }
-
-    private fun setSettingsTarget(compact: Boolean) {
-        if (settingsTargetIsCompact == compact) return
-        settingsTargetIsCompact = compact
-        updateSettingsTargetUi()
-        updateBackgroundModeUi()
-        updateFontSizeUi()
-        updateLyricColorUi()
-    }
-
-    private fun updateSettingsTargetUi() {
-        updateSegmentOptions(
-            listOf(settingsTargetExpanded to "expanded", settingsTargetCompact to "compact"),
-            if (settingsTargetIsCompact) "compact" else "expanded"
-        )
-    }
-
-    private fun backgroundPreferenceKey(): String = if (settingsTargetIsCompact) {
-        LyricsOverlayService.PREF_BACKGROUND_MODE_COMPACT
-    } else LyricsOverlayService.PREF_BACKGROUND_MODE
-
-    private fun fontScalePreferenceKey(): String = if (settingsTargetIsCompact) {
-        LyricsOverlayService.PREF_FONT_SCALE_COMPACT_PERCENT
-    } else LyricsOverlayService.PREF_FONT_SCALE_PERCENT
-
-    private fun lyricColorPreferenceKey(): String = if (settingsTargetIsCompact) {
-        LyricsOverlayService.PREF_LYRIC_COLOR_COMPACT
-    } else LyricsOverlayService.PREF_LYRIC_COLOR
-
-    private fun expandedBackgroundMode(): String = overlayPrefs.getString(
-        LyricsOverlayService.PREF_BACKGROUND_MODE,
-        LyricsOverlayService.BACKGROUND_DEFAULT
-    ).orEmpty().ifBlank { LyricsOverlayService.BACKGROUND_DEFAULT }
-
-    private fun expandedFontScale(): Int = overlayPrefs.getInt(
-        LyricsOverlayService.PREF_FONT_SCALE_PERCENT,
-        LyricsOverlayService.FONT_SCALE_DEFAULT_PERCENT
-    )
-
-    private fun expandedLyricColor(): String = overlayPrefs.getString(
-        LyricsOverlayService.PREF_LYRIC_COLOR,
-        LyricsOverlayService.LYRIC_COLOR_DEFAULT
-    ).orEmpty().ifBlank { LyricsOverlayService.LYRIC_COLOR_DEFAULT }
-
-    private fun updateOverlayUi() {
-        val listenerGranted = hasNotificationListenerAccess()
-        val overlayGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-            Settings.canDrawOverlays(this)
-        val running = LyricsOverlayService.isRunning
-
-        btnListenerPermission.text = if (listenerGranted) "✓ 通知使用权" else "通知使用权"
-        btnOverlayPermission.text = if (overlayGranted) "✓ 悬浮窗权限" else "悬浮窗权限"
-        btnOverlay.text = if (running) "关闭歌词悬浮窗" else "开启歌词悬浮窗"
-        btnOverlay.backgroundTintList = android.content.res.ColorStateList.valueOf(
-            android.graphics.Color.parseColor(if (running) "#C92842" else "#FA2D48")
-        )
-
-        val permissionsReady = listenerGranted && overlayGranted
-        tvRuntimeBadge.text = when {
-            running -> "运行中"
-            permissionsReady -> "准备就绪"
-            else -> "待授权"
-        }
-        tvRuntimeBadge.setTextColor(
-            android.graphics.Color.parseColor(
-                when {
-                    running -> "#FF7388"
-                    permissionsReady -> "#B8B8BE"
-                    else -> "#FF9DAA"
-                }
-            )
-        )
-        tvRuntimeBadge.backgroundTintList = android.content.res.ColorStateList.valueOf(
-            android.graphics.Color.parseColor(
-                when {
-                    running -> "#264F1721"
-                    permissionsReady -> "#262F2F34"
-                    else -> "#263A151C"
-                }
-            )
-        )
-
-        tvOverlayStatus.text = when {
-            running -> "已运行：系统回调实时同步，歌词进度在本机按帧推进"
-            !listenerGranted && !overlayGranted -> "还需要授予“通知使用权”和“悬浮窗权限”"
-            !listenerGranted -> "还需要通知使用权（读取第三方 MediaSession）"
-            !overlayGranted -> "还需要悬浮窗权限"
-            else -> "权限齐全，可以开启；无需给音乐 App 单独打开通知显示"
-        }
-    }
-
-    private val updatePrefs by lazy {
-        getSharedPreferences("update_check_v1", Context.MODE_PRIVATE)
-    }
-
-    private fun checkForUpdates(manual: Boolean) {
-        val now = System.currentTimeMillis()
-        if (!manual && now - updatePrefs.getLong(PREF_LAST_UPDATE_CHECK, 0L) < UPDATE_CHECK_INTERVAL_MS) {
+    private fun pushSnapshot() {
+        if (!webReady) return
+        val c = controller
+        if (c == null) {
+            evalJs("window.LyricHome && window.LyricHome.setSnapshot(${jsonStr(JSONObject().put("track", "").toString())});")
             return
         }
-        updatePrefs.edit().putLong(PREF_LAST_UPDATE_CHECK, now).apply()
-        if (manual) {
-            versionCheckButton.text = "正在检查更新…"
-            versionCheckButton.isEnabled = false
+        val md = c.metadata
+        val pb = c.playbackState
+        val title = firstString(md, MediaMetadata.METADATA_KEY_TITLE, MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
+        val artist = firstString(
+            md,
+            MediaMetadata.METADATA_KEY_ARTIST,
+            MediaMetadata.METADATA_KEY_ALBUM_ARTIST,
+            MediaMetadata.METADATA_KEY_AUTHOR,
+            MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE
+        )
+        val album = firstString(md, MediaMetadata.METADATA_KEY_ALBUM)
+        val duration = md?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+        val stateStr = when (pb?.state) {
+            PlaybackState.STATE_PLAYING -> "playing"
+            PlaybackState.STATE_PAUSED -> "paused"
+            else -> "paused"
         }
-        lifecycleScope.launch {
-            val result = UpdateChecker.fetchLatest(currentVersionName)
-            if (manual) {
-                versionCheckButton.text =
-                    "当前版本 $currentVersionName · 检查更新"
-                versionCheckButton.isEnabled = true
-            }
-            result.onSuccess { release ->
-                val newer = UpdateChecker.isNewer(release.version, currentVersionName)
-                val ignored = updatePrefs.getString(PREF_IGNORED_RELEASE, "") == release.tag
-                if (newer && (manual || !ignored)) {
-                    availableRelease = release
-                    updateNoticeTitle.text = "发现新版本 ${release.tag}"
-                    updateNoticeSummary.text = release.summary
-                    updateNoticePanel.visibility = View.VISIBLE
-                } else if (manual) {
-                    updateNoticePanel.visibility = View.GONE
-                    Toast.makeText(
-                        this@MainActivity,
-                        if (newer) "该版本已被忽略，可从 GitHub 下载" else "当前已是最新版",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    if (newer) {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.pageUrl)))
-                    }
-                }
-            }.onFailure {
-                if (manual) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "暂时无法检查更新，请稍后重试",
-                        Toast.LENGTH_SHORT
-                    ).show()
+        val cover = coverDataUrl(md)
+        val snapshot = JSONObject()
+            .put("track", title)
+            .put("artist", artist)
+            .put("cover", cover)
+            .put("positionMs", positionOf(pb, duration))
+            .put("durationMs", duration.coerceAtLeast(0L))
+            .put("state", stateStr)
+        evalJs("window.LyricHome && window.LyricHome.setSnapshot(${jsonStr(snapshot.toString())});")
+
+        // 换歌 → 拉歌词
+        val key = "$title\u0000$artist\u0000$album"
+        if (title.isNotBlank() && key != lastTrackKey) {
+            lastTrackKey = key
+            fetchLyrics(title, artist, album, duration)
+        } else if (title.isBlank()) {
+            lastTrackKey = ""
+        }
+    }
+
+    private fun pushProgressOnly() {
+        if (!webReady) return
+        val c = controller ?: return
+        val pb = c.playbackState ?: return
+        val duration = c.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+        val playing = pb.state == PlaybackState.STATE_PLAYING
+        evalJs("window.LyricHome && window.LyricHome.setProgress(${positionOf(pb, duration)}, $playing);")
+    }
+
+    private var coverCacheKey = ""
+    private var coverCacheUrl = ""
+    private fun coverDataUrl(md: MediaMetadata?): String {
+        val key = firstString(md, MediaMetadata.METADATA_KEY_TITLE) + "|" +
+            firstString(md, MediaMetadata.METADATA_KEY_ARTIST)
+        if (key == coverCacheKey && coverCacheUrl.isNotEmpty()) return coverCacheUrl
+        val bmp = md?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+            ?: md?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+            ?: md?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+            ?: return ""
+        val out = java.io.ByteArrayOutputStream()
+        val maxSide = maxOf(bmp.width, bmp.height)
+        val scaled = if (maxSide > 400) {
+            val r = 400f / maxSide
+            android.graphics.Bitmap.createScaledBitmap(
+                bmp, (bmp.width * r).toInt().coerceAtLeast(1), (bmp.height * r).toInt().coerceAtLeast(1), true
+            )
+        } else bmp
+        scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+        if (scaled !== bmp) scaled.recycle()
+        coverCacheKey = key
+        coverCacheUrl = "data:image/jpeg;base64," +
+            android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
+        return coverCacheUrl
+    }
+
+    // ---------- 歌词拉取 ----------
+    private fun fetchLyrics(track: String, artist: String, album: String, durationMs: Long) {
+        val reqId = ++lyricRequestId
+        evalJs("window.LyricHome && window.LyricHome.clear();")
+        ioScope.launch {
+            val result = runCatching {
+                repository.resolveLyrics(track, artist, album, durationMs)
+            }.getOrNull()
+            if (reqId != lyricRequestId) return@launch
+            withContext(Dispatchers.Main) {
+                if (result == null || result.lyrics.isBlank()) {
+                    evalJs("window.LyricHome && window.LyricHome.setLyrics([]);")
+                } else {
+                    val lrc = jsonStr(result.lyrics)
+                    val trans = jsonStr(result.translatedLyrics)
+                    val word = jsonStr(result.wordLyrics)
+                    evalJs("window.LyricHome && window.LyricHome.setLyricsFromLrc($lrc,$trans,$word);")
                 }
             }
         }
     }
 
-    companion object {
-        private const val PREF_LAST_UPDATE_CHECK = "last_check_at"
-        private const val PREF_IGNORED_RELEASE = "ignored_release"
-        private const val UPDATE_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L
+    // ---------- 主题喂给 WebView ----------
+    private fun applyThemeToWeb() {
+        val night = (resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        evalJs("window.LyricHome && window.LyricHome.setTheme('${if (night) "dark" else "light"}');")
     }
 
-    private val currentVersionName: String
-        get() = packageManager.getPackageInfo(packageName, 0).versionName
-            .orEmpty().substringBefore('-').ifBlank { "1.07" }
+    // ---------- JS 桥 ----------
+    inner class HomeBridge {
+        @JavascriptInterface
+        fun openMore() {
+            runOnUiThread { openSettings() }
+        }
+
+        @JavascriptInterface
+        fun seekTo(positionMs: Double) {
+            if (!positionMs.isFinite()) return
+            runOnUiThread {
+                val c = controller ?: return@runOnUiThread
+                runCatching { c.transportControls.seekTo(positionMs.toLong().coerceAtLeast(0L)) }
+                mainHandler.postDelayed({ pushSnapshot() }, 180)
+            }
+        }
+    }
+
+    // ---------- helpers ----------
+    private fun evalJs(js: String) {
+        if (!webReady) return
+        web.evaluateJavascript(js, null)
+    }
+
+    /** 把字符串安全地作为 JS 字符串字面量传入。 */
+    private fun jsonStr(s: String): String = JSONObject.quote(s)
 }

@@ -29,6 +29,7 @@
 
         <activity android:name=".FullscreenLyricsActivity" android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize" />
+        <activity android:name=".SettingsActivity" android:exported="false" />
         <activity android:name=".TranslationSettingsActivity" android:exported="false" />
         <activity android:name=".ApiProfileManagerActivity" android:exported="false" />
         <activity android:name=".LyricOffsetMemoryActivity" android:exported="false" />
