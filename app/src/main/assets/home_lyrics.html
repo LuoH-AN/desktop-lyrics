@@ -242,6 +242,7 @@
   var durationMs = 0;
   var positionMs = 0;
   var lastSyncWall = 0;    // performance.now() at last position update
+  var smoothPos = null;    // 平滑后的显示位置，用于消除切歌瞬间的小幅回跳
   var playing = false;
   var showTranslation = true;
   var canPrev = false, canNext = false;
@@ -375,8 +376,19 @@
 
   // ---------- 主循环：滚动 + 距离态 + 逐字 + 间奏 ----------
   function estimatedPos(){
-    if(!playing) return positionMs;
-    return positionMs + (performance.now()-lastSyncWall);
+    var raw = playing ? positionMs + (performance.now()-lastSyncWall) : positionMs;
+    // 平滑：真实位置若发生小幅回跳（<1.2s，通常是切歌瞬间的乐观外推被原生纠正），
+    // 让显示位置在几帧内缓过去而不是硬倒回，消除“歌词倒退”的突兀感。
+    if(smoothPos==null){ smoothPos = raw; }
+    else {
+      var diff = raw - smoothPos;
+      if(diff < 0 && diff > -1200){
+        smoothPos += diff * 0.18;          // 小幅回跳 → 缓动
+      } else {
+        smoothPos = raw;                    // 前进 / 大跳（seek、切歌）→ 直接对齐
+      }
+    }
+    return smoothPos;
   }
 
   function layout(pos){
@@ -487,8 +499,10 @@
   }
   setInterval(function(){ paintProgress(estimatedPos()); }, 250);
 
-  function setPosition(pos, isPlaying){
+  function setPosition(pos, isPlaying, smooth){
     positionMs = pos; playing = !!isPlaying; lastSyncWall = performance.now();
+    // 非平滑（快照/seek/点击行/切歌）时重置平滑基准，直接对齐；平滑（高频进度）时保留缓动
+    if(!smooth) smoothPos = pos;
     renderPlayIcon();
     paintProgress(pos);
   }
@@ -515,7 +529,7 @@
     },
 
     // 仅更新进度（高频，轻量）
-    setProgress: function(posMs, isPlaying){ setPosition(posMs, isPlaying); },
+    setProgress: function(posMs, isPlaying){ setPosition(posMs, isPlaying, true); },
 
     // 歌词：LyricLine[]  {time, text, sub?, words?:[{t,dur,word}], endTime?}
     setLyrics: function(data){

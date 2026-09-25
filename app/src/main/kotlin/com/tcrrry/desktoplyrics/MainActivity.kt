@@ -67,6 +67,10 @@ class MainActivity : AppCompatActivity() {
     private var controller: MediaController? = null
     private var lastTrackKey = ""
     private var lyricRequestId = 0
+    // 切歌时刻（elapsedRealtime 时基）。用于判断某份 PlaybackState 是新歌的还是旧歌的残留：
+    // 只有 lastPositionUpdateTime >= 此值的状态才算“属于当前这首歌”，才允许墙钟外推位置。
+    // 这样切歌瞬间播放器乐观上报 STATE_PLAYING（音频还没响）时不会把歌词冲到前面去。
+    private var trackChangedAtElapsed = 0L
 
     private val controllerCallback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) = pushSnapshot()
@@ -153,6 +157,13 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 声明了 android:configChanges="uiMode"，亮暗切换不再重建 Activity，
+        // 手动把新主题喂给 WebView，消除重建带来的卡顿/闪烁。
+        if (webReady) applyThemeToWeb()
+    }
+
     // ---------- 权限浮层 ----------
     private fun hasListener(): Boolean =
         NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
@@ -197,7 +208,11 @@ class MainActivity : AppCompatActivity() {
         updateGate()
     }
 
-    private fun openSettings() = startActivity(Intent(this, SettingsActivity::class.java))
+    private fun openSettings() {
+        // 转场前先静默 WebView，避免全屏歌词的合成层在切页动画那几帧继续烧 GPU 造成卡顿
+        if (webReady) { web.onPause(); web.pauseTimers() }
+        startActivity(Intent(this, SettingsActivity::class.java))
+    }
 
     // ---------- MediaSession ----------
     private var monitoring = false
@@ -250,8 +265,16 @@ class MainActivity : AppCompatActivity() {
         if (state == null) return 0L
         var pos = state.position.coerceAtLeast(0L)
         if (state.state == PlaybackState.STATE_PLAYING && state.playbackSpeed > 0f) {
-            val elapsed = (SystemClock.elapsedRealtime() - state.lastPositionUpdateTime).coerceAtLeast(0L)
-            pos += (elapsed * state.playbackSpeed).toLong()
+            val now = SystemClock.elapsedRealtime()
+            val updateTime = state.lastPositionUpdateTime
+            val elapsed = (now - updateTime).coerceAtLeast(0L)
+            // 只有当这份 PlaybackState 的位置更新发生在“切歌之后”，且外推的经过时间不夸张时，
+            // 才按墙钟外推。否则视为切歌瞬间的乐观 PLAYING / 上一首残留状态，直接用其上报的原始位置，
+            // 避免歌词先跑、音频响起后又倒回的抖动。
+            val trustable = updateTime >= trackChangedAtElapsed && elapsed <= MAX_EXTRAPOLATE_MS
+            if (trustable) {
+                pos += (elapsed * state.playbackSpeed).toLong()
+            }
         }
         return if (duration > 0) pos.coerceAtMost(duration) else pos
     }
@@ -305,6 +328,8 @@ class MainActivity : AppCompatActivity() {
         val key = "$title\u0000$artist\u0000$album"
         if (title.isNotBlank() && key != lastTrackKey) {
             lastTrackKey = key
+            // 记录切歌时刻：此后只有“更新时间晚于切歌时刻”的 PlaybackState 才允许墙钟外推位置
+            trackChangedAtElapsed = SystemClock.elapsedRealtime()
             fetchLyrics(title, artist, album, duration)
         } else if (title.isBlank()) {
             lastTrackKey = ""
@@ -373,6 +398,12 @@ class MainActivity : AppCompatActivity() {
                 cached.optString("translated"),
                 cached.optString("word")
             )
+            // 命中的旧缓存若已带来源信息，补一条歌词源管理记录（供“歌词源管理”页展示）
+            mirrorToMatchMemory(
+                track, artist, album, durationMs,
+                cached.optString("source"), cached.optString("recordId"),
+                cached.optString("lyrics"), cached.optString("translated"), cached.optString("word")
+            )
             return
         }
 
@@ -386,11 +417,14 @@ class MainActivity : AppCompatActivity() {
             val lrc = result?.lyrics.orEmpty()
             val trans = result?.translatedLyrics.orEmpty()
             val word = result?.wordLyrics.orEmpty()
+            val source = result?.source.orEmpty()
+            val recordId = result?.recordId.orEmpty()
             if (lrc.isNotBlank()) {
                 // 写缓存（限量，避免无限膨胀）
                 runCatching {
                     val obj = JSONObject()
                         .put("lyrics", lrc).put("translated", trans).put("word", word)
+                        .put("source", source).put("recordId", recordId)
                         .put("at", System.currentTimeMillis())
                     val editor = lyricCachePrefs.edit().putString(cacheKey, obj.toString())
                     if (lyricCachePrefs.all.size > 60) {
@@ -401,11 +435,64 @@ class MainActivity : AppCompatActivity() {
                     }
                     editor.apply()
                 }
+                // 镜像到歌词源管理记忆（与悬浮窗共用同一份 match_memory_v2）
+                mirrorToMatchMemory(track, artist, album, durationMs, source, recordId, lrc, trans, word)
             }
             withContext(Dispatchers.Main) {
                 if (reqId != lyricRequestId) return@withContext
                 applyLyricPayload(lrc, trans, word)
             }
+        }
+    }
+
+    /**
+     * 把主页拉到的歌词写进「歌词源管理」共用的 match_memory_v2（存于悬浮窗 prefs）。
+     * 仅在该歌+来源尚无记录时新增，绝不覆盖用户在悬浮窗里手动选过的版本。
+     * key 格式与悬浮窗 matchMemoryKey 完全一致：normalizedKey|durationSec|source。
+     */
+    private fun mirrorToMatchMemory(
+        track: String, artist: String, album: String, durationMs: Long,
+        source: String, recordId: String, lrc: String, trans: String, word: String
+    ) {
+        if (track.isBlank() || source.isBlank() || lrc.isBlank()) return
+        runCatching {
+            val normKey = ("$track\u0000$artist").trim().lowercase(java.util.Locale.ROOT)
+            val durSec = Math.round(durationMs / 1000.0)
+            val key = "$normKey|$durSec|$source"
+
+            val arr = org.json.JSONArray(
+                overlayPrefs.getString("match_memory_v2", "[]").orEmpty().ifBlank { "[]" }
+            )
+            // 已存在同 key（含悬浮窗手动选择）则不动
+            for (i in 0 until arr.length()) {
+                if (arr.optJSONObject(i)?.optString("key") == key) return
+            }
+
+            val candidate = JSONObject()
+                .put("lyrics", lrc)
+                .put("translatedLyrics", trans)
+                .put("wordLyrics", word)
+                .put("duration", durationMs)
+                .put("cover", "")
+                .put("source", source)
+                .put("recordId", recordId)
+                .put("title", track)
+                .put("artist", artist)
+                .put("matchScore", 0)
+            val entry = JSONObject()
+                .put("key", key)
+                .put("at", System.currentTimeMillis())
+                .put("title", track)
+                .put("artist", artist)
+                .put("album", album)
+                .put("duration", durationMs)
+                .put("source", source)
+                .put("candidate", candidate)
+                .put("original", candidate)
+                .put("history", org.json.JSONArray().put(candidate))
+                .put("needsReview", false)
+            arr.put(entry)
+            overlayPrefs.edit().putString("match_memory_v2", arr.toString()).apply()
         }
     }
 
@@ -473,4 +560,9 @@ class MainActivity : AppCompatActivity() {
 
     /** 把字符串安全地作为 JS 字符串字面量传入。 */
     private fun jsonStr(s: String): String = JSONObject.quote(s)
+
+    companion object {
+        // 墙钟外推的经过时间上限；超过它说明这份 PlaybackState 已陈旧（如切歌残留），不外推。
+        private const val MAX_EXTRAPOLATE_MS = 1500L
+    }
 }
