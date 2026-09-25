@@ -346,24 +346,65 @@ class MainActivity : AppCompatActivity() {
         return coverCacheUrl
     }
 
-    // ---------- 歌词拉取 ----------
+    // ---------- 歌词拉取（带本地缓存） ----------
+    private val lyricCachePrefs by lazy {
+        getSharedPreferences("home_lyric_cache_v1", Context.MODE_PRIVATE)
+    }
+
+    private fun cacheKeyOf(track: String, artist: String, album: String) =
+        "$track\u0000$artist\u0000$album"
+
+    private fun applyLyricPayload(lrc: String, trans: String, word: String) {
+        if (lrc.isBlank()) { evalJs("window.LyricHome && window.LyricHome.setLyrics([]);"); return }
+        evalJs("window.LyricHome && window.LyricHome.setLyricsFromLrc(${jsonStr(lrc)},${jsonStr(trans)},${jsonStr(word)});")
+    }
+
     private fun fetchLyrics(track: String, artist: String, album: String, durationMs: Long) {
         val reqId = ++lyricRequestId
+        val cacheKey = cacheKeyOf(track, artist, album)
+
+        // 1) 命中缓存立即上屏（无空白/无闪烁），随后不再打网络
+        val cached = runCatching {
+            lyricCachePrefs.getString(cacheKey, null)?.let { JSONObject(it) }
+        }.getOrNull()
+        if (cached != null && cached.optString("lyrics").isNotBlank()) {
+            applyLyricPayload(
+                cached.optString("lyrics"),
+                cached.optString("translated"),
+                cached.optString("word")
+            )
+            return
+        }
+
+        // 2) 未命中才清空并联网
         evalJs("window.LyricHome && window.LyricHome.clear();")
         ioScope.launch {
             val result = runCatching {
                 repository.resolveLyrics(track, artist, album, durationMs)
             }.getOrNull()
             if (reqId != lyricRequestId) return@launch
-            withContext(Dispatchers.Main) {
-                if (result == null || result.lyrics.isBlank()) {
-                    evalJs("window.LyricHome && window.LyricHome.setLyrics([]);")
-                } else {
-                    val lrc = jsonStr(result.lyrics)
-                    val trans = jsonStr(result.translatedLyrics)
-                    val word = jsonStr(result.wordLyrics)
-                    evalJs("window.LyricHome && window.LyricHome.setLyricsFromLrc($lrc,$trans,$word);")
+            val lrc = result?.lyrics.orEmpty()
+            val trans = result?.translatedLyrics.orEmpty()
+            val word = result?.wordLyrics.orEmpty()
+            if (lrc.isNotBlank()) {
+                // 写缓存（限量，避免无限膨胀）
+                runCatching {
+                    val obj = JSONObject()
+                        .put("lyrics", lrc).put("translated", trans).put("word", word)
+                        .put("at", System.currentTimeMillis())
+                    val editor = lyricCachePrefs.edit().putString(cacheKey, obj.toString())
+                    if (lyricCachePrefs.all.size > 60) {
+                        // 简单清理：删掉最旧的一半
+                        lyricCachePrefs.all.entries
+                            .sortedBy { (runCatching { JSONObject(it.value as String).optLong("at") }.getOrDefault(0L)) }
+                            .take(30).forEach { editor.remove(it.key) }
+                    }
+                    editor.apply()
                 }
+            }
+            withContext(Dispatchers.Main) {
+                if (reqId != lyricRequestId) return@withContext
+                applyLyricPayload(lrc, trans, word)
             }
         }
     }

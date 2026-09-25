@@ -61,7 +61,7 @@
   #track {
     position:absolute; left:0; right:0; padding:0 26px;
     will-change:transform;
-    transition:transform .9s cubic-bezier(.2,.7,.2,1); /* 与行过渡同步 */
+    transition:transform .78s cubic-bezier(.16,.84,.28,1); /* 稍快 + 更强缓出，像被"吸"到位 */
   }
   .line {
     padding:11px 0; cursor:pointer;
@@ -70,8 +70,8 @@
     font-weight:700; letter-spacing:-.5px; line-height:1.32;
     transform-origin:left center;
     overflow-wrap:break-word; word-break:break-word; /* 长行折行不横向溢出 */
-    transition:color .8s ease, filter .8s ease, opacity .8s ease,
-               transform .9s cubic-bezier(.2,.7,.2,1);
+    transition:color .55s ease, filter .7s ease, opacity .7s ease,
+               transform .72s cubic-bezier(.34,1.32,.42,1); /* 过冲曲线：当前行放大带轻微回弹 */
     will-change:transform, filter, opacity;
   }
   .line .sub {
@@ -86,10 +86,10 @@
   .line[data-d="4"] {                          filter:blur(4px);   opacity:.25; transform:scale(.785); }
 
   /* 当前行呼吸：只动 opacity，绝不碰 transform（否则与 scale 过渡打架） */
-  .line[data-d="0"] { animation:breathe 5s ease-in-out infinite; animation-delay:.9s; }
+  .line[data-d="0"] { animation:breathe 4.6s ease-in-out infinite; animation-delay:.85s; }
   @keyframes breathe {
     0%,100% { opacity:1; }
-    50%     { opacity:.9; }
+    50%     { opacity:.88; }
   }
 
   /* 逐字点亮（卡拉OK wipe）：加 6% 柔边过渡区，消除直角硬切 */
@@ -99,8 +99,8 @@
     --wipe:0%;
     background:linear-gradient(90deg,
       var(--sung) 0%,
-      var(--sung) calc(var(--wipe) - 3%),
-      var(--unsung) calc(var(--wipe) + 3%),
+      var(--sung) calc(var(--wipe) - 4%),
+      var(--unsung) calc(var(--wipe) + 4%),
       var(--unsung) 100%);
     -webkit-background-clip:text; background-clip:text;
     -webkit-text-fill-color:transparent; color:transparent;
