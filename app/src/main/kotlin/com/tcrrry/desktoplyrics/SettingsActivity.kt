@@ -38,6 +38,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private lateinit var listenerState: TextView
     private lateinit var overlayState: TextView
+    private lateinit var overlayToggleState: TextView
     private lateinit var themeFollow: TextView
     private lateinit var themeLight: TextView
     private lateinit var themeDark: TextView
@@ -71,6 +72,7 @@ class SettingsActivity : AppCompatActivity() {
 
         listenerState = findViewById(R.id.listener_permission_state)
         overlayState = findViewById(R.id.overlay_permission_state)
+        overlayToggleState = findViewById(R.id.overlay_toggle_state)
         themeFollow = findViewById(R.id.theme_follow)
         themeLight = findViewById(R.id.theme_light)
         themeDark = findViewById(R.id.theme_dark)
@@ -95,6 +97,8 @@ class SettingsActivity : AppCompatActivity() {
         versionValue = findViewById(R.id.version_value)
         versionValue.text = currentVersionName
 
+        // 悬浮窗开关
+        findViewById<View>(R.id.cell_overlay_toggle).setOnClickListener { toggleOverlay() }
         // 权限
         findViewById<View>(R.id.cell_listener_permission).setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -174,9 +178,55 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<View>(R.id.cell_manage_offsets).setOnClickListener {
             startActivity(Intent(this, LyricOffsetMemoryActivity::class.java))
         }
+        // 关于
         findViewById<View>(R.id.cell_check_update).setOnClickListener { checkForUpdates() }
+        findViewById<View>(R.id.cell_bilibili).setOnClickListener {
+            openUrl("https://space.bilibili.com/")
+        }
+        findViewById<View>(R.id.cell_github).setOnClickListener {
+            openUrl("https://github.com/tcrrry/desktop-lyrics")
+        }
+        findViewById<View>(R.id.cell_privacy).setOnClickListener {
+            openUrl("https://github.com/tcrrry/desktop-lyrics/blob/main/PRIVACY.md")
+        }
 
         refreshAll()
+    }
+
+    private fun openUrl(url: String) {
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+            .onFailure { Toast.makeText(this, "无法打开链接", Toast.LENGTH_SHORT).show() }
+    }
+
+    // ---------- 悬浮窗开关 ----------
+    private fun toggleOverlay() {
+        if (LyricsOverlayService.isRunning) {
+            stopService(Intent(this, LyricsOverlayService::class.java).apply {
+                action = LyricsOverlayService.ACTION_STOP
+            })
+            overlayToggleState.postDelayed({ updatePermissionStates() }, 250)
+            return
+        }
+        if (!hasNotificationListenerAccess()) {
+            Toast.makeText(this, "请先授予通知使用权", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "请先允许显示悬浮窗", Toast.LENGTH_SHORT).show()
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+            ); return
+        }
+        ContextCompat.startForegroundService(
+            this,
+            Intent(this, LyricsOverlayService::class.java).apply {
+                action = LyricsOverlayService.ACTION_START
+            }
+        )
+        overlayToggleState.postDelayed({ updatePermissionStates() }, 250)
     }
 
     override fun onResume() {
@@ -223,6 +273,7 @@ class SettingsActivity : AppCompatActivity() {
         val overlayOk = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
         listenerState.text = if (listenerOk) "已授权" else "去开启"
         overlayState.text = if (overlayOk) "已授权" else "去开启"
+        overlayToggleState.text = if (LyricsOverlayService.isRunning) "运行中" else "已关闭"
     }
 
     // ---------- 设置对象 ----------

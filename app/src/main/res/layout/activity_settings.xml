@@ -51,9 +51,15 @@
             android:paddingEnd="18dp"
             android:paddingBottom="28dp">
 
-            <!-- ========== 权限 ========== -->
-            <TextView style="@style/GroupLabel" android:text="权限" />
+            <!-- ========== 悬浮窗 ========== -->
+            <TextView style="@style/GroupLabel" android:text="悬浮窗" />
             <LinearLayout style="@style/GroupCard">
+                <LinearLayout style="@style/Cell" android:id="@+id/cell_overlay_toggle">
+                    <TextView style="@style/CellTitle" android:text="桌面歌词悬浮窗" />
+                    <TextView android:id="@+id/overlay_toggle_state" style="@style/CellValue" android:text="已关闭" />
+                    <TextView style="@style/Chevron" android:text="" />
+                </LinearLayout>
+                <View style="@style/CellDivider" />
                 <LinearLayout style="@style/Cell" android:id="@+id/cell_listener_permission">
                     <TextView style="@style/CellTitle" android:text="通知使用权" />
                     <TextView android:id="@+id/listener_permission_state" style="@style/CellValue" android:text="去开启" />
@@ -190,11 +196,7 @@
                     <TextView style="@style/CellTitle" android:text="补充翻译" />
                     <TextView style="@style/Chevron" />
                 </LinearLayout>
-            </LinearLayout>
-
-            <!-- ========== 管理 ========== -->
-            <TextView style="@style/GroupLabel" android:text="管理" />
-            <LinearLayout style="@style/GroupCard">
+                <View style="@style/CellDivider" />
                 <LinearLayout style="@style/Cell" android:id="@+id/cell_manage_sources">
                     <TextView style="@style/CellTitle" android:text="歌词源管理" />
                     <TextView style="@style/Chevron" />
@@ -204,10 +206,29 @@
                     <TextView style="@style/CellTitle" android:text="偏移记忆管理" />
                     <TextView style="@style/Chevron" />
                 </LinearLayout>
-                <View style="@style/CellDivider" />
+            </LinearLayout>
+
+            <!-- ========== 关于 ========== -->
+            <TextView style="@style/GroupLabel" android:text="关于" />
+            <LinearLayout style="@style/GroupCard">
                 <LinearLayout style="@style/Cell" android:id="@+id/cell_check_update">
                     <TextView style="@style/CellTitle" android:text="检查更新" />
                     <TextView android:id="@+id/version_value" style="@style/CellValue" android:text="1.07" />
+                    <TextView style="@style/Chevron" />
+                </LinearLayout>
+                <View style="@style/CellDivider" />
+                <LinearLayout style="@style/Cell" android:id="@+id/cell_bilibili">
+                    <TextView style="@style/CellTitle" android:text="作者 · B站 @Tcrrrry" />
+                    <TextView style="@style/Chevron" />
+                </LinearLayout>
+                <View style="@style/CellDivider" />
+                <LinearLayout style="@style/Cell" android:id="@+id/cell_github">
+                    <TextView style="@style/CellTitle" android:text="开源项目 · GitHub" />
+                    <TextView style="@style/Chevron" />
+                </LinearLayout>
+                <View style="@style/CellDivider" />
+                <LinearLayout style="@style/Cell" android:id="@+id/cell_privacy">
+                    <TextView style="@style/CellTitle" android:text="隐私说明" />
                     <TextView style="@style/Chevron" />
                 </LinearLayout>
             </LinearLayout>
@@ -215,11 +236,11 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="22dp"
                 android:gravity="center"
-                android:text="B站 @Tcrrrry"
+                android:text="歌词来自 LRCLIB / QQ音乐 / 网易云，版权归各平台所有"
                 android:textColor="@color/text_tertiary"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

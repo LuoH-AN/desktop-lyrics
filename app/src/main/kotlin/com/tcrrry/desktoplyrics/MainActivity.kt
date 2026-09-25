@@ -283,6 +283,9 @@ class MainActivity : AppCompatActivity() {
             else -> "paused"
         }
         val cover = coverDataUrl(md)
+        val actions = pb?.actions ?: 0L
+        val canPrev = actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS != 0L
+        val canNext = actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L
         val snapshot = JSONObject()
             .put("track", title)
             .put("artist", artist)
@@ -290,6 +293,8 @@ class MainActivity : AppCompatActivity() {
             .put("positionMs", positionOf(pb, duration))
             .put("durationMs", duration.coerceAtLeast(0L))
             .put("state", stateStr)
+            .put("canPrev", canPrev)
+            .put("canNext", canNext)
         evalJs("window.LyricHome && window.LyricHome.setSnapshot(${jsonStr(snapshot.toString())});")
 
         // 换歌 → 拉歌词
@@ -380,6 +385,36 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 val c = controller ?: return@runOnUiThread
                 runCatching { c.transportControls.seekTo(positionMs.toLong().coerceAtLeast(0L)) }
+                mainHandler.postDelayed({ pushSnapshot() }, 180)
+            }
+        }
+
+        @JavascriptInterface
+        fun togglePlay() {
+            runOnUiThread {
+                val c = controller ?: return@runOnUiThread
+                val playing = c.playbackState?.state == PlaybackState.STATE_PLAYING
+                runCatching {
+                    if (playing) c.transportControls.pause() else c.transportControls.play()
+                }
+                mainHandler.postDelayed({ pushSnapshot() }, 120)
+            }
+        }
+
+        @JavascriptInterface
+        fun skipPrev() {
+            runOnUiThread {
+                val c = controller ?: return@runOnUiThread
+                runCatching { c.transportControls.skipToPrevious() }
+                mainHandler.postDelayed({ pushSnapshot() }, 180)
+            }
+        }
+
+        @JavascriptInterface
+        fun skipNext() {
+            runOnUiThread {
+                val c = controller ?: return@runOnUiThread
+                runCatching { c.transportControls.skipToNext() }
                 mainHandler.postDelayed({ pushSnapshot() }, 180)
             }
         }

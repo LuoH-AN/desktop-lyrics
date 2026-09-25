@@ -124,33 +124,58 @@
 
   /* ---------- 底部播放条 ---------- */
   #bar {
-    flex-shrink:0; padding:18px 24px calc(22px + env(safe-area-inset-bottom));
+    flex-shrink:0; padding:16px 22px calc(18px + env(safe-area-inset-bottom));
     border-top:1px solid var(--bar-line);
   }
-  #barTop { display:flex; align-items:flex-start; gap:14px; }
+  #barTop { display:flex; align-items:center; gap:13px; }
   #cover {
-    width:52px; height:52px; border-radius:11px; flex-shrink:0;
+    width:50px; height:50px; border-radius:11px; flex-shrink:0;
     background:var(--cover-bg); border:1px solid var(--cover-line);
     background-size:cover; background-position:center;
   }
-  #meta { min-width:0; flex:1; display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  #meta { min-width:0; flex:1; display:flex; align-items:center; justify-content:space-between; gap:10px; }
   #metaText { min-width:0; }
-  #song { font-size:17px; font-weight:700; letter-spacing:-.3px; color:var(--song);
+  #song { font-size:16px; font-weight:700; letter-spacing:-.3px; color:var(--song);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  #singer { font-size:14px; font-weight:500; margin-top:3px; color:var(--singer);
+  #singer { font-size:13px; font-weight:500; margin-top:2px; color:var(--singer);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #more {
-    flex-shrink:0; width:34px; height:30px; margin:-4px -8px 0 0;
+    flex-shrink:0; width:36px; height:34px; margin-right:-8px;
     display:flex; align-items:center; justify-content:center;
     color:var(--dots); font-size:22px; line-height:1; letter-spacing:1px; cursor:pointer;
+    transition:opacity .15s ease;
   }
-  #more:active { opacity:.5; }
-  #progWrap { margin-top:16px; cursor:pointer; padding:6px 0; }
-  #progTrack { height:3px; border-radius:2px; background:var(--prog-track); position:relative; }
+  #more:active { opacity:.4; }
+
+  #progWrap { margin-top:14px; cursor:pointer; padding:7px 0; touch-action:none; }
+  #progTrack { height:3px; border-radius:2px; background:var(--prog-track); position:relative; transition:height .18s ease; }
+  #progWrap.drag #progTrack { height:5px; }
   #progFill { position:absolute; left:0; top:0; height:100%; width:0%; border-radius:2px; background:var(--prog-fill); }
-  #progFill::after { content:""; position:absolute; right:-4px; top:-2.5px; width:8px; height:8px; border-radius:50%; background:inherit; }
-  #time { display:flex; justify-content:space-between; margin-top:9px; color:var(--time);
+  #progKnob {
+    position:absolute; top:50%; left:0; width:12px; height:12px; border-radius:50%;
+    background:var(--prog-fill); transform:translate(-50%,-50%) scale(0);
+    transition:transform .18s ease;
+  }
+  #progWrap.drag #progKnob, #progWrap:active #progKnob { transform:translate(-50%,-50%) scale(1); }
+  #time { display:flex; justify-content:space-between; margin-top:8px; color:var(--time);
     font-size:12px; font-weight:500; font-variant-numeric:tabular-nums; }
+
+  /* 传输控制：上一首 / 播放暂停 / 下一首 */
+  #controls { display:flex; align-items:center; justify-content:center; gap:34px; margin-top:14px; }
+  .ctrl {
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    color:var(--song); transition:transform .12s ease, opacity .15s ease;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .ctrl:active { transform:scale(.86); opacity:.6; }
+  .ctrl.disabled { opacity:.28; pointer-events:none; }
+  .ctrl svg { display:block; fill:currentColor; }
+  #btnPrev svg, #btnNext svg { width:30px; height:30px; }
+  #btnPlay {
+    width:56px; height:56px; border-radius:50%;
+    border:1px solid var(--bar-line);
+  }
+  #btnPlay svg { width:26px; height:26px; }
 </style>
 </head>
 <body>
@@ -171,8 +196,20 @@
         <div id="more" title="更多">⋯</div>
       </div>
     </div>
-    <div id="progWrap"><div id="progTrack"><div id="progFill"></div></div></div>
+    <div id="progWrap"><div id="progTrack"><div id="progFill"></div><div id="progKnob"></div></div></div>
     <div id="time"><span id="tCur">0:00</span><span id="tDur">0:00</span></div>
+    <div id="controls">
+      <div class="ctrl" id="btnPrev" title="上一首">
+        <svg viewBox="0 0 24 24"><path d="M7 6v12H5V6h2zm12 0v12l-8.5-6L19 6z"/></svg>
+      </div>
+      <div class="ctrl" id="btnPlay" title="播放/暂停">
+        <svg id="iconPlay" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="iconPause" viewBox="0 0 24 24" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+      </div>
+      <div class="ctrl" id="btnNext" title="下一首">
+        <svg viewBox="0 0 24 24"><path d="M17 6v12h2V6h-2zM5 6v12l8.5-6L5 6z"/></svg>
+      </div>
+    </div>
   </div>
 
 <script>
@@ -191,6 +228,12 @@
   var progFill = document.getElementById('progFill');
   var tCur = document.getElementById('tCur');
   var tDur = document.getElementById('tDur');
+  var progKnob = document.getElementById('progKnob');
+  var btnPrev = document.getElementById('btnPrev');
+  var btnPlay = document.getElementById('btnPlay');
+  var btnNext = document.getElementById('btnNext');
+  var iconPlay = document.getElementById('iconPlay');
+  var iconPause = document.getElementById('iconPause');
 
   var lines = [];          // [{time, text, sub, words:[{t,word}]}]
   var lineEls = [];
@@ -200,6 +243,8 @@
   var lastSyncWall = 0;    // performance.now() at last position update
   var playing = false;
   var showTranslation = true;
+  var canPrev = false, canNext = false;
+  var dragging = false;
 
   function fmt(ms){
     if(!isFinite(ms)||ms<0)ms=0;
@@ -211,29 +256,77 @@
 
   // ---- 原生调用入口 ----
   function bridge(name){ try{ return window.LyricHomeNative && window.LyricHomeNative[name]; }catch(e){ return null; } }
+  function callNative(name){ var f=bridge(name); if(f){ var a=Array.prototype.slice.call(arguments,1); try{ window.LyricHomeNative[name].apply(window.LyricHomeNative,a); }catch(e){} return true; } return false; }
 
   moreEl.addEventListener('click', function(){
-    var fn = bridge('openMore');
-    if(fn) window.LyricHomeNative.openMore();
-    else alert('（demo）打开设置 / 更多菜单');
+    if(!callNative('openMore')) alert('（demo）打开设置 / 更多菜单');
   });
 
-  progWrap.addEventListener('click', function(ev){
-    if(durationMs<=0) return;
-    var rect = progWrap.getBoundingClientRect();
-    var ratio = Math.min(1, Math.max(0, (ev.clientX-rect.left)/rect.width));
-    var target = ratio*durationMs;
-    var fn = bridge('seekTo');
-    if(fn) window.LyricHomeNative.seekTo(target);
-    setPosition(target, playing);
+  // ---------- 传输控制 ----------
+  btnPlay.addEventListener('click', function(){
+    // 乐观切换图标，原生回快照会再校正
+    playing = !playing; renderPlayIcon();
+    if(!callNative('togglePlay')){ /* demo */ }
   });
+  btnPrev.addEventListener('click', function(){ if(btnPrev.classList.contains('disabled'))return; callNative('skipPrev'); });
+  btnNext.addEventListener('click', function(){ if(btnNext.classList.contains('disabled'))return; callNative('skipNext'); });
+
+  function renderPlayIcon(){
+    iconPlay.style.display  = playing ? 'none' : 'block';
+    iconPause.style.display = playing ? 'block' : 'none';
+  }
+  function renderTransport(){
+    btnPrev.classList.toggle('disabled', !canPrev);
+    btnNext.classList.toggle('disabled', !canNext);
+    renderPlayIcon();
+  }
+
+  // ---------- 进度条：点击 + 拖动 ----------
+  function ratioFromEvent(clientX){
+    var rect = progWrap.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (clientX-rect.left)/rect.width));
+  }
+  function previewSeek(ratio){
+    // 拖动时只在本地预览进度，不打扰原生
+    var pos = ratio*durationMs;
+    progFill.style.width = (ratio*100)+'%';
+    progKnob.style.left = (ratio*100)+'%';
+    tCur.textContent = fmt(pos);
+  }
+  function pointerDown(ev){
+    if(durationMs<=0) return;
+    dragging = true; progWrap.classList.add('drag');
+    var x = ev.touches? ev.touches[0].clientX : ev.clientX;
+    previewSeek(ratioFromEvent(x));
+    ev.preventDefault();
+  }
+  function pointerMove(ev){
+    if(!dragging) return;
+    var x = ev.touches? ev.touches[0].clientX : ev.clientX;
+    previewSeek(ratioFromEvent(x));
+    ev.preventDefault();
+  }
+  function pointerUp(ev){
+    if(!dragging) return;
+    dragging = false; progWrap.classList.remove('drag');
+    var x = (ev.changedTouches? ev.changedTouches[0].clientX : ev.clientX);
+    var ratio = ratioFromEvent(x);
+    var target = ratio*durationMs;
+    callNative('seekTo', target);
+    setPosition(target, playing);
+  }
+  progWrap.addEventListener('mousedown', pointerDown);
+  progWrap.addEventListener('touchstart', pointerDown, {passive:false});
+  window.addEventListener('mousemove', pointerMove);
+  window.addEventListener('touchmove', pointerMove, {passive:false});
+  window.addEventListener('mouseup', pointerUp);
+  window.addEventListener('touchend', pointerUp);
 
   // 点击某行 → seek 到该行时间
   function onLineClick(idx){
     var ln = lines[idx];
     if(!ln || ln.time==null) return;
-    var fn = bridge('seekTo');
-    if(fn) window.LyricHomeNative.seekTo(ln.time);
+    callNative('seekTo', ln.time);
     setPosition(ln.time, playing);
   }
 
@@ -384,8 +477,10 @@
 
   // ---------- 进度条 + 时间 ----------
   function paintProgress(pos){
+    if(dragging) return; // 拖动时不被自动进度覆盖
     var ratio = durationMs>0? Math.min(1,pos/durationMs) : 0;
     progFill.style.width = (ratio*100)+'%';
+    progKnob.style.left = (ratio*100)+'%';
     tCur.textContent = fmt(pos);
     tDur.textContent = fmt(durationMs);
   }
@@ -393,6 +488,7 @@
 
   function setPosition(pos, isPlaying){
     positionMs = pos; playing = !!isPlaying; lastSyncWall = performance.now();
+    renderPlayIcon();
     paintProgress(pos);
   }
 
@@ -403,7 +499,7 @@
     // 主题：'light' | 'dark'
     setTheme: function(t){ document.documentElement.setAttribute('data-theme', t==='light'?'light':'dark'); },
 
-    // 播放信息快照：{track,artist,cover,positionMs,durationMs,state}
+    // 播放信息快照：{track,artist,cover,positionMs,durationMs,state,canPrev,canNext}
     setSnapshot: function(s){
       if(typeof s==='string'){ try{ s=JSON.parse(s); }catch(e){ return; } }
       songEl.textContent = s.track || '未在播放';
@@ -411,8 +507,10 @@
       if(s.cover){ coverEl.style.backgroundImage='url("'+s.cover+'")'; }
       else { coverEl.style.backgroundImage=''; }
       durationMs = s.durationMs||0;
+      canPrev = !!s.canPrev; canNext = !!s.canNext;
       setPosition(s.positionMs||0, s.state==='playing');
-      if(!lines.length){ emptyEl.style.display = s.track? 'flex':'flex'; emptyEl.textContent = s.track? '正在获取歌词…' : '未在播放'; }
+      renderTransport();
+      if(!lines.length){ emptyEl.style.display='flex'; emptyEl.textContent = s.track? '正在获取歌词…' : '未在播放'; }
     },
 
     // 仅更新进度（高频，轻量）
@@ -533,7 +631,7 @@
       {time:22200, text:'整个夏天 都是你的侧脸'},
       {time:26000, text:'时光在这里 停格成永远'}
     ];
-    window.LyricHome.setSnapshot({track:'一千零一夜',artist:'黄霄雲',durationMs:197000,positionMs:10200,state:'playing'});
+    window.LyricHome.setSnapshot({track:'一千零一夜',artist:'黄霄雲',durationMs:197000,positionMs:10200,state:'playing',canPrev:true,canNext:true});
     window.LyricHome.setLyrics(demo);
     // demo 时间推进
     var base = performance.now(), start=10200;
