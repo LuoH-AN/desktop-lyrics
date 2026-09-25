@@ -261,6 +261,7 @@ class TranslationSettingsActivity : AppCompatActivity() {
         })
         apiVerifyButton = button("确认配置并验证连通性") { confirmApi() }.apply {
             setBackgroundResource(R.drawable.bg_ui_primary_button)
+            setTextColor(col(R.color.text_on_accent))
         }
         apiBox.addView(apiVerifyButton)
         settingsCard.addView(apiBox)
