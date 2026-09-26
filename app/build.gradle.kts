@@ -45,6 +45,15 @@ android {
         debug {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-test"
+            // 固定 debug 签名：用仓库内 debug.keystore，保证每次 CI 出的包签名一致，可直接覆盖安装
+            rootProject.file("debug.keystore").takeIf { it.exists() }?.let { ks ->
+                signingConfig = signingConfigs.maybeCreate("debugFixed").apply {
+                    storeFile = ks
+                    storePassword = "android"
+                    keyAlias = "androiddebugkey"
+                    keyPassword = "android"
+                }
+            }
         }
         release {
             signingConfigs.findByName("release")?.let { signingConfig = it }

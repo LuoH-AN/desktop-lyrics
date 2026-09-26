@@ -6,6 +6,7 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+!debug.keystore
 captures/
 .externalNativeBuild/
 .cxx/
