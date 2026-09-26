@@ -1,4 +1,4 @@
-package com.tcrrry.desktoplyrics
+package com.luoh.music.lrc
 
 import android.annotation.SuppressLint
 import android.content.ComponentName
@@ -66,11 +66,24 @@ class MainActivity : AppCompatActivity() {
     private var webReady = false
     private var controller: MediaController? = null
     private var lastTrackKey = ""
-    private var lyricRequestId = 0
+    @Volatile private var lyricRequestId = 0
     // 切歌时刻（elapsedRealtime 时基）。用于判断某份 PlaybackState 是新歌的还是旧歌的残留：
     // 只有 lastPositionUpdateTime >= 此值的状态才算“属于当前这首歌”，才允许墙钟外推位置。
     // 这样切歌瞬间播放器乐观上报 STATE_PLAYING（音频还没响）时不会把歌词冲到前面去。
     private var trackChangedAtElapsed = 0L
+    // 刚开始监听（onResume / 切换会话）后的第一帧快照，此时的“换歌”其实是恢复现场，不该当作切歌卡住位置。
+    private var firstSnapshotSinceMonitor = true
+    // 当前这首歌用于 per-song 偏移的身份信息（歌词就绪后填），供设置页在悬浮窗未运行时对齐偏移记忆。
+    private var currentLyricIdentity = ""
+    private var currentLyricSource = ""
+    private var currentLyricTitle = ""
+    private var currentLyricArtist = ""
+    // 当前生效的歌词负载签名，refreshLyricsSettings 用它判断本地来源（自定义/缓存）是否变化。
+    private var currentPayloadSignature = ""
+    private var currentTrack = ""
+    private var currentArtist = ""
+    private var currentAlbum = ""
+    private var currentDurationMs = 0L
 
     private val controllerCallback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) = pushSnapshot()
@@ -136,19 +149,26 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         web.onResume()
-        web.resumeTimers()
         ThemePrefs.apply(appPrefs.getString(ThemePrefs.KEY, ThemePrefs.FOLLOW))
         updateGate()
         startSessionMonitor()
         mainHandler.post(progressTick)
-        if (webReady) { applyThemeToWeb(); pushSnapshot() }
+        if (webReady) {
+            applyThemeToWeb()
+            // 恢复页面的 rAF/动画（onPause 时用 setActive(false) 停掉，避免 pauseTimers 影响悬浮窗）
+            evalJs("window.LyricHome && window.LyricHome.setActive(true);")
+            pushSnapshot()
+            refreshLyricsSettings()
+        }
     }
 
     override fun onPause() {
         mainHandler.removeCallbacks(progressTick)
         stopSessionMonitor()
         web.onPause()
-        web.pauseTimers()   // 停掉 WebView 的 rAF/定时器，释放 CPU，避免开设置页/切主题卡顿
+        // 用 JS 停掉本页 rAF/定时器释放 CPU；不能用 web.pauseTimers()——它是进程级的，会连带把
+        // 悬浮窗 WebService 的 WebView 一起冻住，导致悬浮窗歌词停更。
+        evalJs("window.LyricHome && window.LyricHome.setActive(false);")
         super.onPause()
     }
 
@@ -209,8 +229,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSettings() {
-        // 转场前先静默 WebView，避免全屏歌词的合成层在切页动画那几帧继续烧 GPU 造成卡顿
-        if (webReady) { web.onPause(); web.pauseTimers() }
+        // 转场前先静默 WebView，避免全屏歌词的合成层在切页动画那几帧继续烧 GPU 造成卡顿。
+        // 用 setActive(false) 而非 pauseTimers()，后者是进程级的会连带冻住悬浮窗。
+        if (webReady) { web.onPause(); evalJs("window.LyricHome && window.LyricHome.setActive(false);") }
         startActivity(Intent(this, SettingsActivity::class.java))
     }
 
@@ -222,6 +243,7 @@ class MainActivity : AppCompatActivity() {
         try {
             sessionManager.addOnActiveSessionsChangedListener(sessionsChangedListener, listenerComponent)
             monitoring = true
+            firstSnapshotSinceMonitor = true
             refreshController()
         } catch (_: SecurityException) {
             // 无通知使用权
@@ -232,6 +254,7 @@ class MainActivity : AppCompatActivity() {
         if (!monitoring) return
         try { sessionManager.removeOnActiveSessionsChangedListener(sessionsChangedListener) } catch (_: Exception) {}
         controller?.unregisterCallback(controllerCallback)
+        controller = null
         monitoring = false
     }
 
@@ -264,17 +287,16 @@ class MainActivity : AppCompatActivity() {
     private fun positionOf(state: PlaybackState?, duration: Long): Long {
         if (state == null) return 0L
         var pos = state.position.coerceAtLeast(0L)
-        if (state.state == PlaybackState.STATE_PLAYING && state.playbackSpeed > 0f) {
-            val now = SystemClock.elapsedRealtime()
-            val updateTime = state.lastPositionUpdateTime
+        val now = SystemClock.elapsedRealtime()
+        val updateTime = state.lastPositionUpdateTime
+        // 切歌后短暂窗口内，若这份状态的位置更新还停留在切歌之前（旧歌残留），先按 0 处理，
+        // 等播放器真正开始新歌再显示，避免歌词先跑一段又倒回的抖动。
+        if (updateTime < trackChangedAtElapsed && now - trackChangedAtElapsed < TRACK_CHANGE_SETTLE_MS) {
+            return 0L
+        }
+        if (state.state == PlaybackState.STATE_PLAYING && state.playbackSpeed > 0f && updateTime > 0L) {
             val elapsed = (now - updateTime).coerceAtLeast(0L)
-            // 只有当这份 PlaybackState 的位置更新发生在“切歌之后”，且外推的经过时间不夸张时，
-            // 才按墙钟外推。否则视为切歌瞬间的乐观 PLAYING / 上一首残留状态，直接用其上报的原始位置，
-            // 避免歌词先跑、音频响起后又倒回的抖动。
-            val trustable = updateTime >= trackChangedAtElapsed && elapsed <= MAX_EXTRAPOLATE_MS
-            if (trustable) {
-                pos += (elapsed * state.playbackSpeed).toLong()
-            }
+            pos += (elapsed * state.playbackSpeed).toLong()
         }
         return if (duration > 0) pos.coerceAtMost(duration) else pos
     }
@@ -304,6 +326,23 @@ class MainActivity : AppCompatActivity() {
         )
         val album = firstString(md, MediaMetadata.METADATA_KEY_ALBUM)
         val duration = md?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+
+        // 先检测换歌（在算位置之前），以便正确设置 trackChangedAtElapsed
+        val key = "$title\u0000$artist\u0000$album"
+        val trackChanged = title.isNotBlank() && key != lastTrackKey
+        if (trackChanged) {
+            lastTrackKey = key
+            currentTrack = title
+            currentArtist = artist
+            currentAlbum = album
+            currentDurationMs = duration.coerceAtLeast(0L)
+            // 第一帧（恢复现场）不算切歌，避免把正在播放的位置误判成旧歌残留而卡在 0
+            trackChangedAtElapsed = if (firstSnapshotSinceMonitor) 0L else SystemClock.elapsedRealtime()
+        } else if (title.isBlank()) {
+            lastTrackKey = ""
+        }
+        firstSnapshotSinceMonitor = false
+
         val stateStr = when (pb?.state) {
             PlaybackState.STATE_PLAYING -> "playing"
             PlaybackState.STATE_PAUSED -> "paused"
@@ -325,14 +364,8 @@ class MainActivity : AppCompatActivity() {
         evalJs("window.LyricHome && window.LyricHome.setSnapshot(${jsonStr(snapshot.toString())});")
 
         // 换歌 → 拉歌词
-        val key = "$title\u0000$artist\u0000$album"
-        if (title.isNotBlank() && key != lastTrackKey) {
-            lastTrackKey = key
-            // 记录切歌时刻：此后只有“更新时间晚于切歌时刻”的 PlaybackState 才允许墙钟外推位置
-            trackChangedAtElapsed = SystemClock.elapsedRealtime()
+        if (trackChanged) {
             fetchLyrics(title, artist, album, duration)
-        } else if (title.isBlank()) {
-            lastTrackKey = ""
         }
     }
 
@@ -371,39 +404,97 @@ class MainActivity : AppCompatActivity() {
         return coverCacheUrl
     }
 
-    // ---------- 歌词拉取（带本地缓存） ----------
+    // ---------- 歌词拉取（自定义 → 本地缓存 → 联网） ----------
     private val lyricCachePrefs by lazy {
-        getSharedPreferences("home_lyric_cache_v1", Context.MODE_PRIVATE)
+        getSharedPreferences(LYRIC_CACHE_PREFS, Context.MODE_PRIVATE)
     }
 
     private fun cacheKeyOf(track: String, artist: String, album: String) =
         "$track\u0000$artist\u0000$album"
 
-    private fun applyLyricPayload(lrc: String, trans: String, word: String) {
-        if (lrc.isBlank()) { evalJs("window.LyricHome && window.LyricHome.setLyrics([]);"); return }
-        evalJs("window.LyricHome && window.LyricHome.setLyricsFromLrc(${jsonStr(lrc)},${jsonStr(trans)},${jsonStr(word)});")
+    /** 一份可上屏的歌词负载，signature 用于判断本地来源是否变化（自定义被增删/改）。 */
+    private data class LyricPayload(
+        val lyrics: String,
+        val translated: String,
+        val word: String,
+        val source: String,
+        val recordId: String
+    ) {
+        val signature: String get() = "$source\u0000$recordId\u0000${lyrics.length}"
+        val isBlank: Boolean get() = lyrics.isBlank()
+    }
+
+    /** 只查本地：先自定义歌词，再 14 天内的缓存。查不到返回 null（需要联网）。 */
+    private fun localPayload(track: String, artist: String, album: String): LyricPayload? {
+        CustomLyricsStore.find(this, track, artist)?.let { entry ->
+            val parsed = CustomLyricsStore.parse(entry.lyrics)
+            if (parsed.lyrics.isNotBlank()) {
+                return LyricPayload(
+                    parsed.lyrics, parsed.translatedLyrics, "",
+                    CustomLyricsStore.SOURCE, entry.recordId
+                )
+            }
+        }
+        val cached = runCatching {
+            lyricCachePrefs.getString(cacheKeyOf(track, artist, album), null)?.let { JSONObject(it) }
+        }.getOrNull() ?: return null
+        val at = cached.optLong("at", 0L)
+        if (at > 0 && System.currentTimeMillis() - at > CACHE_TTL_MS) return null
+        val lrc = cached.optString("lyrics")
+        if (lrc.isBlank()) return null
+        return LyricPayload(
+            lrc, cached.optString("translated"), cached.optString("word"),
+            cached.optString("source"), cached.optString("recordId")
+        )
+    }
+
+    private fun applyLyricPayload(payload: LyricPayload) {
+        currentPayloadSignature = payload.signature
+        currentLyricSource = payload.source
+        // per-song 偏移身份：与悬浮窗一致 identity=(track\u0000artist).trim().lowercase
+        currentLyricTitle = currentTrack
+        currentLyricArtist = currentArtist
+        currentLyricIdentity = "$currentTrack\u0000$currentArtist".trim().lowercase(java.util.Locale.ROOT)
+        if (payload.isBlank) {
+            evalJs("window.LyricHome && window.LyricHome.setLyrics([]);")
+            return
+        }
+        val custom = payload.source == CustomLyricsStore.SOURCE
+        evalJs(
+            "window.LyricHome && window.LyricHome.setLyricsFromLrc(" +
+                "${jsonStr(payload.lyrics)},${jsonStr(payload.translated)},${jsonStr(payload.word)}," +
+                "${jsonStr(payload.source)},$custom);"
+        )
+        applyLyricOffset()
+    }
+
+    /** 读取该歌该源的 per-song 偏移并喂给页面；同时记录当前身份，让设置页也能对齐。 */
+    private fun applyLyricOffset() {
+        if (currentLyricIdentity.isBlank() || currentLyricSource.isBlank()) return
+        LyricsOverlayService.rememberActiveLyric(
+            overlayPrefs, currentLyricIdentity, currentLyricSource, currentLyricTitle, currentLyricArtist
+        )
+        val key = LyricsOverlayService.lyricOffsetPreferenceKey(currentLyricIdentity, currentLyricSource)
+        val offset = overlayPrefs.getInt(key, 0)
+            .coerceIn(LyricsOverlayService.LYRIC_OFFSET_MIN_MS, LyricsOverlayService.LYRIC_OFFSET_MAX_MS)
+        evalJs("window.LyricHome && window.LyricHome.setLyricOffset($offset);")
     }
 
     private fun fetchLyrics(track: String, artist: String, album: String, durationMs: Long) {
         val reqId = ++lyricRequestId
         val cacheKey = cacheKeyOf(track, artist, album)
 
-        // 1) 命中缓存立即上屏（无空白/无闪烁），随后不再打网络
-        val cached = runCatching {
-            lyricCachePrefs.getString(cacheKey, null)?.let { JSONObject(it) }
-        }.getOrNull()
-        if (cached != null && cached.optString("lyrics").isNotBlank()) {
-            applyLyricPayload(
-                cached.optString("lyrics"),
-                cached.optString("translated"),
-                cached.optString("word")
-            )
-            // 命中的旧缓存若已带来源信息，补一条歌词源管理记录（供“歌词源管理”页展示）
-            mirrorToMatchMemory(
-                track, artist, album, durationMs,
-                cached.optString("source"), cached.optString("recordId"),
-                cached.optString("lyrics"), cached.optString("translated"), cached.optString("word")
-            )
+        // 1) 本地命中（自定义 / 缓存）立即上屏，不打网络
+        val local = localPayload(track, artist, album)
+        if (local != null) {
+            applyLyricPayload(local)
+            // 自定义歌词不写入自动匹配记忆；缓存来源补一条歌词源管理记录
+            if (local.source != CustomLyricsStore.SOURCE) {
+                mirrorToMatchMemory(
+                    track, artist, album, durationMs,
+                    local.source, local.recordId, local.lyrics, local.translated, local.word
+                )
+            }
             return
         }
 
@@ -440,8 +531,34 @@ class MainActivity : AppCompatActivity() {
             }
             withContext(Dispatchers.Main) {
                 if (reqId != lyricRequestId) return@withContext
-                applyLyricPayload(lrc, trans, word)
+                applyLyricPayload(LyricPayload(lrc, trans, word, source, recordId))
             }
+        }
+    }
+
+    /**
+     * 回到主页时重新对齐歌词设置：
+     *   - 重新应用翻译模式
+     *   - 若本地来源（自定义歌词）有增删导致负载签名变化，重新上屏
+     *   - 否则只重新应用偏移（用户可能刚在偏移记忆页改过）
+     */
+    private fun refreshLyricsSettings() {
+        // 翻译模式
+        val mode = overlayPrefs.getString(
+            LyricsOverlayService.PREF_TRANSLATION_MODE, LyricsOverlayService.TRANSLATION_BILINGUAL
+        ) ?: LyricsOverlayService.TRANSLATION_BILINGUAL
+        evalJs("window.LyricHome && window.LyricHome.setTranslationMode(${jsonStr(mode)});")
+
+        if (currentTrack.isBlank()) return
+        val local = localPayload(currentTrack, currentArtist, currentAlbum)
+        when {
+            // 本地来源变了（新增/改了自定义，或缓存过期），重新上屏
+            local != null && local.signature != currentPayloadSignature -> applyLyricPayload(local)
+            // 之前用的是自定义歌词，但现在被删了 → 重新联网拉
+            local == null && currentLyricSource == CustomLyricsStore.SOURCE ->
+                fetchLyrics(currentTrack, currentArtist, currentAlbum, currentDurationMs)
+            // 其它情况只重新应用偏移
+            else -> applyLyricOffset()
         }
     }
 
@@ -491,6 +608,7 @@ class MainActivity : AppCompatActivity() {
                 .put("original", candidate)
                 .put("history", org.json.JSONArray().put(candidate))
                 .put("needsReview", false)
+                .put("auto", true)
             arr.put(entry)
             overlayPrefs.edit().putString("match_memory_v2", arr.toString()).apply()
         }
@@ -550,6 +668,24 @@ class MainActivity : AppCompatActivity() {
                 mainHandler.postDelayed({ pushSnapshot() }, 180)
             }
         }
+
+        /** 为当前这首歌指定/编辑自定义 LRC 歌词；没有正在播放的歌就打开管理页手动新建。 */
+        @JavascriptInterface
+        fun editCustomLyrics() {
+            runOnUiThread {
+                if (currentTrack.isNotBlank()) {
+                    startActivity(CustomLyricsEditActivity.intent(this@MainActivity, currentTrack, currentArtist))
+                } else {
+                    startActivity(Intent(this@MainActivity, CustomLyricsManagerActivity::class.java))
+                }
+            }
+        }
+
+        /** 打开自定义歌词管理页。 */
+        @JavascriptInterface
+        fun manageCustomLyrics() {
+            runOnUiThread { startActivity(Intent(this@MainActivity, CustomLyricsManagerActivity::class.java)) }
+        }
     }
 
     // ---------- helpers ----------
@@ -562,7 +698,9 @@ class MainActivity : AppCompatActivity() {
     private fun jsonStr(s: String): String = JSONObject.quote(s)
 
     companion object {
-        // 墙钟外推的经过时间上限；超过它说明这份 PlaybackState 已陈旧（如切歌残留），不外推。
-        private const val MAX_EXTRAPOLATE_MS = 1500L
+        // 切歌后的稳定窗口：这段时间内若拿到的还是旧歌残留状态，位置先按 0 处理，避免歌词抖动。
+        private const val TRACK_CHANGE_SETTLE_MS = 1500L
+        private const val LYRIC_CACHE_PREFS = "home_lyric_cache_v1"
+        private const val CACHE_TTL_MS = 14L * 24 * 60 * 60 * 1000
     }
 }

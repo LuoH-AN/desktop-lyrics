@@ -1,14 +1,14 @@
 <div align="center">
-  <img src="app/src/main/res/drawable-nodpi/ic_launcher_art.png" width="104" alt="Desktop Lyrics app icon">
+  <img src="docs/assets/app-icon.svg" width="104" alt="Desktop Lyrics app icon">
 
 # Desktop Lyrics for Android
 
 **A polished, real-time, freely resizable floating lyrics overlay for Android.**
 
-[Video demo](https://www.bilibili.com/video/BV1jNu66eEkr/) · [Download](https://github.com/tcrrry/desktop-lyrics/releases/latest) · [简体中文](./README.md) · [Privacy](./PRIVACY.md) · [Changelog](./CHANGELOG.md)
+[Video demo](https://www.bilibili.com/video/BV1jNu66eEkr/) · [Download](https://github.com/LuoH-AN/desktop-lyrics/releases/latest) · [简体中文](./README.md) · [Privacy](./PRIVACY.md) · [Changelog](./CHANGELOG.md)
 
-[![Latest Release](https://img.shields.io/github/v/release/tcrrry/desktop-lyrics?display_name=tag&sort=semver&label=release)](https://github.com/tcrrry/desktop-lyrics/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/tcrrry/desktop-lyrics/total?label=downloads)](https://github.com/tcrrry/desktop-lyrics/releases)
+[![Latest Release](https://img.shields.io/github/v/release/LuoH-AN/desktop-lyrics?display_name=tag&sort=semver&label=release)](https://github.com/LuoH-AN/desktop-lyrics/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/LuoH-AN/desktop-lyrics/total?label=downloads)](https://github.com/LuoH-AN/desktop-lyrics/releases)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Android-7F52FF?logo=kotlin&logoColor=white)
 </div>
@@ -38,6 +38,7 @@ Watch on Bilibili: [Desktop Lyrics for Android — Apple Music / Spotify real-ti
 - Manual lyric browsing with inertial scrolling; tap a timed lyric line to seek, with automatic live-follow recovery
 - Adjustable lyric font size from 35% to 150%, with a responsive minimum height
 - Color presets, a full RGB color picker, and a ±5-second lyric timing offset remembered separately for each track and lyrics source
+- When no lyrics can be found, manually supply a standard LRC file: matched by title + artist, supports word-timed tags, translations (a second line under the same timestamp), and `[offset:]`; once set, both the home screen and the overlay use it without going online, and deleting it restores automatic matching
 - Untimed plain lyrics remain usable with a clear label and smooth progress-based scrolling
 - Optional on-device translation with downloadable ML Kit language packs, plus editable DeepSeek, GLM, Gemini, or custom Chat Completions-compatible API profiles
 - Transparent, low-load, medium-load, and high-load album-color backgrounds; medium load throttles only the animated background, not word highlighting
@@ -64,7 +65,7 @@ Long-running behavior may vary with vendor-specific battery restrictions. If the
 
 ## Install and use
 
-1. Download the latest APK from [Releases](https://github.com/tcrrry/desktop-lyrics/releases/latest).
+1. Download the latest APK from [Releases](https://github.com/LuoH-AN/desktop-lyrics/releases/latest).
 2. Install and open Desktop Lyrics.
 3. Grant Notification Access and the Display over other apps permission.
 4. Start the floating lyrics overlay and play music.
@@ -72,6 +73,7 @@ Long-running behavior may vary with vendor-specific battery restrictions. If the
 6. In full mode, tap the rotation icon to turn the overlay content by 90° while keeping the outer footprint unchanged.
 7. Use the playback buttons or drag the progress bar to control the active player. After browsing the lyrics, tap a timed line to seek to it.
 8. If the lyrics are mismatched, double-tap the QQ Music, NetEase, or LRCLIB source pill to try the next candidate from that provider. Long-press it to clear the remembered choice for that track and provider.
+9. When lyrics can never be found, paste a standard LRC file from the home ⋯ menu or Settings › Custom lyrics; that track will then always use your specified version.
 
 ## Permissions and privacy
 

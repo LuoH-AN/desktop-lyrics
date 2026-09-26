@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="app/src/main/res/drawable-nodpi/ic_launcher_art.png" width="104" alt="桌面歌词应用图标">
+  <img src="docs/assets/app-icon.svg" width="104" alt="桌面歌词应用图标">
 
 # 桌面歌词 / Desktop Lyrics
 
@@ -7,10 +7,10 @@
 
 Android floating lyrics overlay with MediaSession playback detection, synchronized lyrics, fluid resizing, and dynamic album-color backgrounds.
 
-[B站视频演示](https://www.bilibili.com/video/BV1jNu66eEkr/) · [下载最新版](https://github.com/tcrrry/desktop-lyrics/releases/latest) · [English](./README_EN.md) · [隐私说明](./PRIVACY.md) · [更新记录](./CHANGELOG.md)
+[B站视频演示](https://www.bilibili.com/video/BV1jNu66eEkr/) · [下载最新版](https://github.com/LuoH-AN/desktop-lyrics/releases/latest) · [English](./README_EN.md) · [隐私说明](./PRIVACY.md) · [更新记录](./CHANGELOG.md)
 
-[![Latest Release](https://img.shields.io/github/v/release/tcrrry/desktop-lyrics?display_name=tag&sort=semver&label=release)](https://github.com/tcrrry/desktop-lyrics/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/tcrrry/desktop-lyrics/total?label=downloads)](https://github.com/tcrrry/desktop-lyrics/releases)
+[![Latest Release](https://img.shields.io/github/v/release/LuoH-AN/desktop-lyrics?display_name=tag&sort=semver&label=release)](https://github.com/LuoH-AN/desktop-lyrics/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/LuoH-AN/desktop-lyrics/total?label=downloads)](https://github.com/LuoH-AN/desktop-lyrics/releases)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Android-7F52FF?logo=kotlin&logoColor=white)
 </div>
@@ -40,6 +40,7 @@ Android floating lyrics overlay with MediaSession playback detection, synchroniz
 - 展开歌词可手动惯性滚动；点击任意带时间轴的歌词即可跳转，停止操作后自动恢复实时跟随
 - 歌词字号支持 35%–150%，最小窗口高度随字号动态变化
 - 歌词支持颜色预设、全色域无级调色与 ±5 秒同步偏移；偏移会按歌曲和歌词源分别记忆，并可集中管理
+- 获取不到歌词时可手动指定标准 LRC 时间轴歌词：按「歌名 + 歌手」匹配，支持逐字标签、翻译（同一时间戳第二行）、`[offset:]`，命中后主页与悬浮窗直接使用不再联网，删除即恢复自动匹配
 - 没有时间轴的纯文本歌词也能按歌曲进度平滑滚动，并明确标注“无时间轴歌词”
 - 缺少官方译文时可选择离线机翻，语言包按需下载与删除；也可配置兼容 Chat Completions 的 DeepSeek、智谱 GLM、Gemini 或其他 HTTPS API
 - 透明、低负载、中负载和高负载四种背景；中负载仅降低动态背景帧率，不影响逐字歌词进度
@@ -66,7 +67,7 @@ Android floating lyrics overlay with MediaSession playback detection, synchroniz
 
 ## 安装与使用
 
-1. 前往 [Releases](https://github.com/tcrrry/desktop-lyrics/releases/latest) 下载最新版 APK。
+1. 前往 [Releases](https://github.com/LuoH-AN/desktop-lyrics/releases/latest) 下载最新版 APK。
 2. 安装并打开“桌面歌词”。
 3. 依次授予“通知使用权”和“悬浮窗权限”。
 4. 点击“开启歌词悬浮窗”，然后播放音乐。
@@ -74,6 +75,7 @@ Android floating lyrics overlay with MediaSession playback detection, synchroniz
 6. 展开形态下，点击旋转图标可在外框尺寸保持不变的情况下，将悬浮窗内容旋转 90°。
 7. 使用悬浮窗内的播放键或拖动进度条控制当前播放器；滑动浏览歌词后，点击歌词可跳转到对应时间。
 8. 歌词不匹配时，双击“QQ音乐 / 网易云音乐 / LRCLIB”来源胶囊尝试该来源的下一候选；长按可清除这首歌在该来源的选择记忆。
+9. 始终获取不到歌词时，可在主页 ⋯ 菜单或设置页「自定义歌词」中手动粘贴标准 LRC 时间轴歌词，之后这首歌会直接使用你指定的版本。
 
 ## 权限与隐私
 
@@ -120,8 +122,9 @@ Android floating lyrics overlay with MediaSession playback detection, synchroniz
 
 ## 项目信息
 
-- 当前正式版：`1.06`（versionCode 106）
-- Android 包名：`com.tcrrry.desktoplyrics`
-- 作者：B站 `@Tcrrrry`
+- 当前正式版：`1.0`（versionCode 10）
+- Android 包名：`com.luoh.music.lrc`
+- 维护：[@LuoH-AN](https://github.com/LuoH-AN)
+- 原始项目由 B站 `@Tcrrrry` 创作，本仓库在其基础上继续开发，特此致谢
 
 如果这个项目对你有帮助，欢迎点亮右上角的 **Star**，让更多需要 Android 桌面歌词的人看到它。

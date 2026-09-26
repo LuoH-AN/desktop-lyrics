@@ -13,7 +13,7 @@ val signingProperties = Properties().apply {
 }
 
 android {
-    namespace = "com.tcrrry.desktoplyrics"
+    namespace = "com.luoh.music.lrc"
     compileSdk = 34
 
     defaultConfig {

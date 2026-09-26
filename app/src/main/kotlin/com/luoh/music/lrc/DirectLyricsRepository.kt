@@ -1,4 +1,4 @@
-package com.tcrrry.desktoplyrics
+package com.luoh.music.lrc
 
 import android.icu.text.Transliterator
 import android.util.Log
@@ -304,7 +304,7 @@ class DirectLyricsRepository {
         var best: Result? = null
         for (broad in listOf(false, true)) {
         val requestUrl = if (broad) "https://lrclib.net/api/search?track_name=${encode(track)}" else url
-        val list = JSONArray(getText(requestUrl, mapOf("Accept" to "application/json", "User-Agent" to "DesktopLyrics/1.06")))
+        val list = JSONArray(getText(requestUrl, mapOf("Accept" to "application/json", "User-Agent" to "DesktopLyrics/1.0 (https://github.com/LuoH-AN/desktop-lyrics)")))
         val aliases = if (broad && list.length() > 0) providerArtistAliases(artist) else setOf(normalize(artist))
         for (index in 0 until list.length()) {
             val item = list.optJSONObject(index) ?: continue

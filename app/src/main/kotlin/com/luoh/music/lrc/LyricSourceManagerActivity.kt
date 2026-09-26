@@ -1,4 +1,4 @@
-package com.tcrrry.desktoplyrics
+package com.luoh.music.lrc
 
 import android.content.Context
 import android.content.Intent
@@ -52,7 +52,7 @@ class LyricSourceManagerActivity : AppCompatActivity() {
     private fun save(values: List<JSONObject>, notify: Boolean = true) {
         prefs.edit().putString("match_memory_v2", JSONArray(values).toString()).apply()
         if (notify && LyricsOverlayService.isRunning) startService(Intent(this, LyricsOverlayService::class.java).apply {
-            action = "com.tcrrry.desktoplyrics.REFRESH_MATCHES"
+            action = LyricsOverlayService.ACTION_REFRESH_MATCHES
         })
     }
     private fun update(key: String, change: (JSONObject) -> Unit) {
@@ -72,7 +72,10 @@ class LyricSourceManagerActivity : AppCompatActivity() {
         val entry = values.find { it.optString("key") == selected }
         if (entry == null) {
             content.addView(button("清除所有歌词源缓存") {
-                save(emptyList()); selected = null; message = "已清除所有匹配记忆和历史版本，恢复自动匹配"; render()
+                save(emptyList())
+                // 同时清空主页的本地歌词缓存，避免删了记忆主页还显示旧缓存
+                getSharedPreferences("home_lyric_cache_v1", Context.MODE_PRIVATE).edit().clear().apply()
+                selected = null; message = "已清除所有匹配记忆和历史版本，恢复自动匹配"; render()
             }.apply {
                 isEnabled = values.isNotEmpty() && !busy
             })
@@ -120,6 +123,7 @@ class LyricSourceManagerActivity : AppCompatActivity() {
         }
         val key = entry.optString("key")
         if (entry.optBoolean("needsReview")) content.addView(label("这是旧版保存的选择，暂不自动应用，请核对歌词后重新选用或删除。", 14f))
+        else if (entry.optBoolean("auto")) content.addView(label("这是主页自动匹配写入的记录，还没有手动固定。选用某个版本后即固定，悬浮窗与主页都以它为准。", 14f))
         content.addView(label(entry.optString("title"), 20f))
         content.addView(button(if (busy) "正在搜索…" else "搜索下一个匹配结果（仅预览）") { search(entry) }.apply { isEnabled = !busy })
         entry.optJSONObject("original")?.let { original ->
@@ -143,7 +147,8 @@ class LyricSourceManagerActivity : AppCompatActivity() {
                     .filter { it.isNotBlank() }.take(16).joinToString("\n")
                 addView(label(preview, 14f))
                 addView(button(if(current) "正在使用" else "选用这个版本") {
-                    update(key) { it.put("candidate", candidate).put("needsReview", false).put("at", System.currentTimeMillis()) }
+                    // 手动选用 → 固定为手动记忆（清掉 auto/needsReview），悬浮窗与主页都以它为准
+                    update(key) { it.put("candidate", candidate).put("needsReview", false).remove("auto").put("at", System.currentTimeMillis()) }
                 }.apply { isEnabled = !current && !busy })
             })
         }

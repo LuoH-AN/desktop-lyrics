@@ -236,6 +236,13 @@
     .line:not(.active):not(.near) { transform:scale(.86); }
     .line.past { color:rgba(var(--lyric-rgb),.22); }
     .line.loading,.line.empty { color:rgba(var(--lyric-rgb),.55); font-weight:620; }
+    .custom-lyrics-action {
+      display:inline-block; margin-top:14px; font-size:.5em; font-weight:640; letter-spacing:.3px;
+      color:rgb(var(--lyric-rgb)); padding:7px 16px; border-radius:20px;
+      border:1px solid rgba(var(--lyric-rgb),.34); cursor:pointer; opacity:.9;
+      transition:opacity .15s ease;
+    }
+    .custom-lyrics-action:active { opacity:.5; }
     .line-original { display:block; }
     .line-translation { display:block; margin-top:3px; color:rgba(var(--lyric-rgb),.66); font-size:.56em; line-height:1.3; font-weight:620; }
     .line:not(.active) .line-translation { color:inherit; opacity:.78; }
@@ -658,7 +665,7 @@
       return '<span class="line-original">'+original+'</span>'+translation;
     }
 
-    function renderLyrics(lines, message) {
+    function renderLyrics(lines, message, offerCustom) {
       const relayoutEpoch=++lyricsRelayoutEpoch;
       lyricsTrackingSuspended=true;
       resetManualLyricsScroll();
@@ -667,7 +674,10 @@
       playback.active = -1;
       if (!playback.lyrics.length) {
         ui.lyrics.classList.remove('plain-mode','plain-scrolling');
-        ui.lyrics.innerHTML = '<div class="line empty">' + escapeHtml(message || '暂无歌词') + '</div>';
+        // 无歌词时，若可用则附一个“添加 LRC 歌词”按钮，让用户直接去指定自定义歌词
+        const canCustom = offerCustom && window.LobstaNativeLyrics && window.LobstaNativeLyrics.editCustomLyrics;
+        ui.lyrics.innerHTML = '<div class="line empty">' + escapeHtml(message || '暂无歌词') +
+          (canCustom ? '<span class="custom-lyrics-action">添加 LRC 歌词</span>' : '') + '</div>';
         ui.lyrics.style.transform = 'translateY(0)';
         setCompactLyric(message || '暂无歌词', false);
         requestAnimationFrame(()=>requestAnimationFrame(()=>{
@@ -1078,6 +1088,15 @@
       scheduleRealtimeLyricsReturn();
     },{passive:true});
 
+    // 空状态里的“添加 LRC 歌词”按钮 → 进入自定义歌词编辑页（当前这首歌）
+    ui.lyrics.addEventListener('click',event=>{
+      if(event.target.closest&&event.target.closest('.custom-lyrics-action')){
+        event.stopPropagation();
+        try{ window.LobstaNativeLyrics&&window.LobstaNativeLyrics.editCustomLyrics&&
+          window.LobstaNativeLyrics.editCustomLyrics(playback.track||'',playback.artist||''); }catch(_){}
+      }
+    });
+
     function updateActiveLine(position, force) {
       const lines = playback.lyrics;
       if (!lines.length) return;
@@ -1287,7 +1306,25 @@
       };
     }
 
+    // 先同步问原生：这首歌有没有用户手动指定的自定义 LRC 歌词。有就直接用，不再联网。
+    function customLyricsFor(track, artist) {
+      try {
+        if (window.LobstaNativeLyrics && window.LobstaNativeLyrics.customLyrics) {
+          const raw = window.LobstaNativeLyrics.customLyrics(track||'', artist||'', playback.durationMs||0);
+          if (raw) { const data = JSON.parse(raw); if (data && isUsableLyricPayload(data.lyrics)) return data; }
+        }
+      } catch (_) {}
+      return null;
+    }
+
     async function resolveTrack(track, artist, key, requestId) {
+      // 自定义歌词优先，命中即上屏并 return，不打网络也不写自动匹配记忆
+      const custom = customLyricsFor(track, artist);
+      if (custom) {
+        saveLyrics(key, custom);
+        applyResolved(custom, key, requestId);
+        return;
+      }
       const cached = cachedLyrics(key);
       if (cached) applyResolved(cached, key, requestId);
       playback.abort?.abort();
@@ -1314,10 +1351,10 @@
         if (isUsableLyricPayload(data.lyrics)) {
           saveLyrics(key,data);
           applyResolved(data,key,requestId);
-        } else if (!cached) renderLyrics([], '暂未匹配到歌词');
+        } else if (!cached) renderLyrics([], '暂未匹配到歌词', true);
       } catch (error) {
         if (error && error.name === 'AbortError') return;
-        if (!cached && key === playback.key) renderLyrics([], '歌词网络暂不可用');
+        if (!cached && key === playback.key) renderLyrics([], '歌词网络暂不可用', true);
       }
     }
 
@@ -1336,7 +1373,7 @@
         saveLyrics(playback.key, data);
         applyResolved(data, playback.key, requestId);
       } else if (!cachedLyrics(playback.key)) {
-        renderLyrics([], '暂未匹配到歌词');
+        renderLyrics([], '暂未匹配到歌词', true);
       }
     }
 
@@ -1387,8 +1424,9 @@
       const supplied=Array.isArray(data.alternatives)&&data.alternatives.length?data.alternatives:[data];
       automaticCandidates=supplied.filter(candidate=>candidate&&isUsableLyricPayload(candidate.lyrics));
       const candidates=supplied.filter(candidate=>candidate&&isUsableLyricPayload(candidate.lyrics)).map(candidate=>{
+        if(candidate.custom)return candidate; // 自定义歌词不参与自动匹配记忆合并
         const remembered=readMatchMemories().find(entry=>entry.key===matchMemoryKey(candidate.source));
-        if(!remembered||remembered.needsReview)return candidate;
+        if(!isManualMemory(remembered))return candidate;
         const old=remembered.candidate;
         if(old.recordId&&old.recordId===candidate.recordId&&
             completeWordLyrics(candidate,parseLrc(candidate.lyrics)).length>
@@ -1446,6 +1484,8 @@
     let sourceClickTimer=0,sourceHoldTimer=0,sourceHoldUsed=false,rematchOperation=0,rematchPending=null;
     const rejectedMatches=new Map();
     function matchMemoryKey(source){return playback.key+'|'+Math.round(playback.durationMs/1000)+'|'+source;}
+    // 手动选定的记忆：存在、非待复核(needsReview)、且非主页自动写入(auto)。只有它才覆盖自动候选。
+    function isManualMemory(entry){return !!entry&&!entry.needsReview&&!entry.auto;}
     function readMatchMemories(){
       try{
         const native=window.LobstaNativeLyrics?.readMatchMemory?.();
@@ -1481,7 +1521,12 @@
       if(rematchPending){clearTimeout(rematchPending.timer);rematchPending=null;}
       rejectedMatches.clear();
       const entries=readMatchMemories();
-      playback.candidates=playback.candidates.map(c=>entries.find(x=>x.key===matchMemoryKey(c.source)&&!x.needsReview)?.candidate||automaticCandidates.find(x=>x.source===c.source)||c);
+      // 只有手动选定(isManualMemory)的记忆才覆盖候选；自定义歌词候选保持不动
+      playback.candidates=playback.candidates.map(c=>{
+        if(c.custom)return c;
+        const remembered=entries.find(x=>x.key===matchMemoryKey(c.source));
+        return (isManualMemory(remembered)?remembered.candidate:null)||automaticCandidates.find(x=>x.source===c.source)||c;
+      });
       if(playback.candidates.length)applyCandidate(playback.candidateIndex);
     }
     function matchNotice(text){
@@ -1494,7 +1539,10 @@
     function rematchCurrentSource(reset=false){
       if(rematchPending){matchNotice('正在重新匹配，请稍候');return;}
       const candidate=playback.candidates[playback.candidateIndex];
-      if(!candidate||!window.LobstaNativeLyrics?.rematchLyrics)return;
+      if(!candidate)return;
+      // 自定义歌词不参与重新匹配（它是用户手动指定的），直接提示去设置里改
+      if(candidate.custom){matchNotice('这是自定义歌词，可在 App 设置 › 自定义歌词 中修改或删除');return;}
+      if(!window.LobstaNativeLyrics?.rematchLyrics)return;
       const key=matchMemoryKey(candidate.source);
       if(reset){
         const original=readMatchMemories().find(x=>x.key===key)?.original||automaticCandidates.find(x=>x.source===candidate.source);
@@ -1531,7 +1579,13 @@
       const title=document.createElement('h3');title.textContent='歌词匹配';panel.appendChild(title);
       const hint=document.createElement('p');hint.textContent='恢复后，将清除此歌曲当前歌词源的手动选择。其他歌曲不受影响。';panel.appendChild(hint);
       const dismiss=()=>{menu.classList.remove('visible');menu.style.pointerEvents='none';setTimeout(()=>menu.remove(),220);};
-      for(const [label,action] of [['恢复自动匹配',()=>rematchCurrentSource(true)],['保留当前选择',()=>{}]]){const button=document.createElement('button');button.textContent=label;button.onclick=()=>{dismiss();action();};panel.appendChild(button);}
+      const buttons=[['恢复自动匹配',()=>rematchCurrentSource(true)]];
+      // 提供“自定义 LRC 歌词”入口：手动指定这首歌的歌词
+      if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.editCustomLyrics){
+        buttons.push(['自定义 LRC 歌词',()=>{try{window.LobstaNativeLyrics.editCustomLyrics(playback.track||'',playback.artist||'');}catch(_){}}]);
+      }
+      buttons.push(['保留当前选择',()=>{}]);
+      for(const [label,action] of buttons){const button=document.createElement('button');button.textContent=label;button.onclick=()=>{dismiss();action();};panel.appendChild(button);}
       menu.onclick=e=>{if(e.target===menu)dismiss();};menu.appendChild(panel);document.body.appendChild(menu);requestAnimationFrame(()=>menu.classList.add('visible'));
     }
     ui.chipsTrack.addEventListener('pointerdown',event=>{if(event.target.closest('.source-chip')){sourceHoldUsed=false;sourceHoldTimer=setTimeout(()=>{sourceHoldUsed=true;clearTimeout(sourceClickTimer);sourceClickTimer=0;showMatchMenu();},600);}});
@@ -1930,6 +1984,13 @@
     window.LobstaOverlay = {
       refreshMatchManagement,
       receiveRematch,
+      // 自定义歌词被新增/编辑/删除后，重新解析当前这首歌（走 resolveTrack，会先查自定义）
+      reloadCustomLyrics() {
+        if(!playback.key)return;
+        candidateSignature='';
+        playback.requestId++;
+        resolveTrack(playback.track, playback.artist, playback.key, playback.requestId);
+      },
       receiveSupplement,
       refreshSupplement() {
         if(playback.candidates.length)applyCandidate(playback.candidateIndex);

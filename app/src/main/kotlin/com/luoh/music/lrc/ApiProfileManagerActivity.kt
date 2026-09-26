@@ -1,4 +1,4 @@
-package com.tcrrry.desktoplyrics
+package com.luoh.music.lrc
 
 import android.app.Dialog
 import android.content.Context

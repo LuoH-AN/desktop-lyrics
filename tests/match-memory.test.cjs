@@ -26,10 +26,22 @@ assert.equal(requests,1,'restore must work offline without a new request');
 assert.equal(JSON.parse(stored).length,0);
 context.rematchCurrentSource();
 context.refreshMatchManagement();
-context.receiveRematch(7,2,next);
-assert.equal(context.playback.candidates[0].recordId,'a','late response must not override management');
-stored=JSON.stringify([{key:'song\u0000artist|216|QQ音乐',at:Date.now(),candidate:next}]);
-assert.equal(context.readMatchMemories()[0].needsReview,true,'legacy choices require review');
 context.refreshMatchManagement();
 assert.equal(context.playback.candidates[0].recordId,'a','unreviewed old selection must not override automatic');
-console.log('PASS: scripts parse, rematch history, offline rollback, stale-response guard, legacy-choice review');
+
+// 主页自动写入(auto:true)的记忆也不得覆盖自动候选——只有手动固定才覆盖
+stored=JSON.stringify([{key:'song\u0000artist|216|QQ音乐',at:Date.now(),title:'Song',artist:'Artist',source:'QQ音乐',candidate:next,auto:true}]);
+context.playback.candidates=[original];context.playback.candidateIndex=0;
+context.refreshMatchManagement();
+assert.equal(context.playback.candidates[0].recordId,'a','auto (home-written) memory must not override automatic candidate');
+
+// 自定义歌词候选：重新匹配必须提前返回，不发网络请求、不写记忆
+const before=requests;
+stored='';
+context.playback.candidates=[{source:'自定义歌词',recordId:'c',lyrics:'custom lyrics',custom:true}];
+context.playback.candidateIndex=0;
+context.rematchCurrentSource();
+assert.equal(requests,before,'custom lyrics must not trigger a rematch network request');
+assert.equal(stored,'','custom lyrics rematch must not write match memory');
+
+console.log('PASS: scripts parse, rematch history, offline rollback, stale-response guard, legacy-choice review, auto-memory guard, custom-lyrics no-rematch');

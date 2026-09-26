@@ -1,4 +1,4 @@
-package com.tcrrry.desktoplyrics
+package com.luoh.music.lrc
 
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
@@ -196,8 +196,12 @@ class LyricsOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == "com.tcrrry.desktoplyrics.REFRESH_MATCHES") {
+        if (intent?.action == ACTION_REFRESH_MATCHES) {
             webView?.evaluateJavascript("window.LobstaOverlay?.refreshMatchManagement();", null)
+            return START_STICKY
+        }
+        if (intent?.action == ACTION_RELOAD_CUSTOM_LYRICS) {
+            reloadCustomLyrics()
             return START_STICKY
         }
         if (intent?.action == ACTION_STOP) {
@@ -384,6 +388,8 @@ class LyricsOverlayService : Service() {
                 currentLyricArtist = safeArtist
                 lyricOffsetMs = remembered
                 prefs.edit().putInt(PREF_LYRIC_OFFSET_MS, remembered).apply()
+                // 记录当前歌词身份，设置页在悬浮窗未运行时也能把偏移写到对的 per-song 键
+                rememberActiveLyric(prefs, safeIdentity, safeSource, safeTitle, safeArtist)
                 announceOverlayState()
             }
             return remembered
@@ -522,6 +528,26 @@ class LyricsOverlayService : Service() {
 
         @JavascriptInterface
         fun readMatchMemory(): String = prefs.getString("match_memory_v2", "").orEmpty()
+
+        /** 悬浮窗解析歌曲时先同步问一次：这首歌有没有用户手动指定的自定义 LRC 歌词。 */
+        @JavascriptInterface
+        fun customLyrics(track: String, artist: String, durationMs: Double): String {
+            if (track.isBlank()) return ""
+            val entry = CustomLyricsStore.find(this@LyricsOverlayService, track, artist) ?: return ""
+            val duration = durationMs.takeIf { it.isFinite() && it > 0 }?.toLong() ?: 0L
+            return CustomLyricsStore.toResultJson(entry, duration).toString()
+        }
+
+        /** 从悬浮窗菜单进入自定义歌词编辑页（当前这首歌）。 */
+        @JavascriptInterface
+        fun editCustomLyrics(track: String, artist: String) {
+            mainHandler.post {
+                startActivity(
+                    CustomLyricsEditActivity.intent(this@LyricsOverlayService, track, artist)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        }
 
         @JavascriptInterface
         fun writeMatchMemory(value: String) {
@@ -1476,6 +1502,16 @@ class LyricsOverlayService : Service() {
         )
     }
 
+    /** 自定义歌词被新增/编辑/删除后，让悬浮窗重新解析当前这首歌。 */
+    fun reloadCustomLyrics() {
+        mainHandler.post {
+            webView?.evaluateJavascript(
+                "window.LobstaOverlay && window.LobstaOverlay.reloadCustomLyrics();",
+                null
+            )
+        }
+    }
+
     private fun lyricOffsetPreferenceKey(identity: String, source: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest("$identity\u0000$source".toByteArray(Charsets.UTF_8))
@@ -1824,7 +1860,9 @@ class LyricsOverlayService : Service() {
     private fun currentPosition(state: PlaybackState?, duration: Long): Long {
         if (state == null) return 0L
         var position = max(0L, state.position)
-        if (state.state == PlaybackState.STATE_PLAYING && state.playbackSpeed > 0f) {
+        // 只有拿到有效的 lastPositionUpdateTime 才外推，否则会用 0 基准把位置越推越大
+        if (state.state == PlaybackState.STATE_PLAYING && state.playbackSpeed > 0f &&
+            state.lastPositionUpdateTime > 0L) {
             val elapsed = max(0L, SystemClock.elapsedRealtime() - state.lastPositionUpdateTime)
             position += (elapsed * state.playbackSpeed).toLong()
         }
@@ -1901,16 +1939,18 @@ class LyricsOverlayService : Service() {
     companion object {
         var instance: LyricsOverlayService? = null
             private set
-        const val ACTION_START = "com.tcrrry.desktoplyrics.action.START_LYRICS_OVERLAY"
-        const val ACTION_STOP = "com.tcrrry.desktoplyrics.action.STOP_LYRICS_OVERLAY"
-        const val ACTION_STATE_CHANGED = "com.tcrrry.desktoplyrics.action.LYRICS_OVERLAY_STATE_CHANGED"
-        const val ACTION_SET_BACKGROUND = "com.tcrrry.desktoplyrics.action.SET_LYRICS_BACKGROUND"
-        const val ACTION_SET_FONT_SCALE = "com.tcrrry.desktoplyrics.action.SET_LYRICS_FONT_SCALE"
-        const val ACTION_SET_LYRIC_COLOR = "com.tcrrry.desktoplyrics.action.SET_LYRIC_COLOR"
-        const val ACTION_SET_LYRIC_OFFSET = "com.tcrrry.desktoplyrics.action.SET_LYRIC_OFFSET"
-        const val ACTION_CLEAR_LYRIC_OFFSET_MEMORIES = "com.tcrrry.desktoplyrics.action.CLEAR_LYRIC_OFFSET_MEMORIES"
-        const val ACTION_DELETE_LYRIC_OFFSET_MEMORY = "com.tcrrry.desktoplyrics.action.DELETE_LYRIC_OFFSET_MEMORY"
-        const val ACTION_SET_TRANSLATION_MODE = "com.tcrrry.desktoplyrics.action.SET_TRANSLATION_MODE"
+        const val ACTION_START = "com.luoh.music.lrc.action.START_LYRICS_OVERLAY"
+        const val ACTION_STOP = "com.luoh.music.lrc.action.STOP_LYRICS_OVERLAY"
+        const val ACTION_STATE_CHANGED = "com.luoh.music.lrc.action.LYRICS_OVERLAY_STATE_CHANGED"
+        const val ACTION_SET_BACKGROUND = "com.luoh.music.lrc.action.SET_LYRICS_BACKGROUND"
+        const val ACTION_SET_FONT_SCALE = "com.luoh.music.lrc.action.SET_LYRICS_FONT_SCALE"
+        const val ACTION_SET_LYRIC_COLOR = "com.luoh.music.lrc.action.SET_LYRIC_COLOR"
+        const val ACTION_SET_LYRIC_OFFSET = "com.luoh.music.lrc.action.SET_LYRIC_OFFSET"
+        const val ACTION_CLEAR_LYRIC_OFFSET_MEMORIES = "com.luoh.music.lrc.action.CLEAR_LYRIC_OFFSET_MEMORIES"
+        const val ACTION_DELETE_LYRIC_OFFSET_MEMORY = "com.luoh.music.lrc.action.DELETE_LYRIC_OFFSET_MEMORY"
+        const val ACTION_SET_TRANSLATION_MODE = "com.luoh.music.lrc.action.SET_TRANSLATION_MODE"
+        const val ACTION_REFRESH_MATCHES = "com.luoh.music.lrc.action.REFRESH_MATCHES"
+        const val ACTION_RELOAD_CUSTOM_LYRICS = "com.luoh.music.lrc.action.RELOAD_CUSTOM_LYRICS"
         const val EXTRA_BACKGROUND_MODE = "background_mode"
         const val EXTRA_FONT_SCALE_PERCENT = "font_scale_percent"
         const val EXTRA_LYRIC_COLOR = "lyric_color"
@@ -1930,6 +1970,10 @@ class LyricsOverlayService : Service() {
         const val PREF_LYRIC_OFFSET_ENTRY_PREFIX = "lyric_offset_entry_v2:"
         const val PREF_LYRIC_OFFSET_INDEX = "lyric_offset_index_v2"
         const val PREF_TRANSLATION_MODE = "translation_mode_v1"
+        const val PREF_ACTIVE_LYRIC_IDENTITY = "active_lyric_identity_v1"
+        const val PREF_ACTIVE_LYRIC_SOURCE = "active_lyric_source_v1"
+        const val PREF_ACTIVE_LYRIC_TITLE = "active_lyric_title_v1"
+        const val PREF_ACTIVE_LYRIC_ARTIST = "active_lyric_artist_v1"
         private const val PREF_COMPACT_WIDTH = "compact_width_v1"
         private const val PREF_EXPANDED_X = "expanded_x_v1"
         private const val PREF_EXPANDED_Y = "expanded_y_v1"
@@ -1955,6 +1999,84 @@ class LyricsOverlayService : Service() {
         fun compactMinimumHeightDp(percent: Int): Int {
             val scale = percent.coerceIn(FONT_SCALE_MIN_PERCENT, FONT_SCALE_MAX_PERCENT) / 100f
             return (9.5f + 34.5f * scale).roundToInt().coerceIn(32, 64)
+        }
+
+        /**
+         * 计算某首歌某个歌词源的 per-song 偏移存储键。与实例方法同算法（SHA-256 取前 12 字节），
+         * 让设置页在悬浮窗没运行时也能直接读写 per-song 记忆。
+         */
+        fun lyricOffsetPreferenceKey(identity: String, source: String): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest("$identity\u0000$source".toByteArray(Charsets.UTF_8))
+                .take(12)
+                .joinToString("") { "%02x".format(it) }
+            return PREF_LYRIC_OFFSET_ENTRY_PREFIX + digest
+        }
+
+        /** 静态版偏移索引维护，供设置页/悬浮窗共用。offsetMs 为 0 时移除该条。 */
+        fun updateLyricOffsetIndex(
+            prefs: android.content.SharedPreferences,
+            editor: android.content.SharedPreferences.Editor,
+            preferenceKey: String,
+            identity: String,
+            source: String,
+            title: String,
+            artist: String,
+            offsetMs: Int
+        ) {
+            val entryId = preferenceKey.removePrefix(PREF_LYRIC_OFFSET_ENTRY_PREFIX)
+            val index = runCatching {
+                org.json.JSONObject(prefs.getString(PREF_LYRIC_OFFSET_INDEX, "{}").orEmpty().ifBlank { "{}" })
+            }.getOrDefault(org.json.JSONObject())
+            if (offsetMs == 0) {
+                index.remove(entryId)
+            } else {
+                index.put(entryId, org.json.JSONObject()
+                    .put("identity", identity)
+                    .put("source", source)
+                    .put("title", title)
+                    .put("artist", artist)
+                    .put("offsetMs", offsetMs)
+                    .put("updatedAt", System.currentTimeMillis()))
+            }
+            editor.putString(PREF_LYRIC_OFFSET_INDEX, index.toString())
+        }
+
+        /** 记录当前正在显示的歌词身份，让没开悬浮窗时设置页也能把偏移写到对的 per-song 键。 */
+        fun rememberActiveLyric(
+            prefs: android.content.SharedPreferences,
+            identity: String,
+            source: String,
+            title: String,
+            artist: String
+        ) {
+            prefs.edit()
+                .putString(PREF_ACTIVE_LYRIC_IDENTITY, identity)
+                .putString(PREF_ACTIVE_LYRIC_SOURCE, source)
+                .putString(PREF_ACTIVE_LYRIC_TITLE, title)
+                .putString(PREF_ACTIVE_LYRIC_ARTIST, artist)
+                .apply()
+        }
+
+        /**
+         * 把某首歌某源的偏移写入 per-song 记忆并同步索引。悬浮窗没运行时由设置页直接调用，
+         * 保证偏移记忆和悬浮窗内改的一致。
+         */
+        fun writeLyricOffsetMemory(
+            prefs: android.content.SharedPreferences,
+            identity: String,
+            source: String,
+            title: String,
+            artist: String,
+            offsetMs: Int
+        ) {
+            if (identity.isBlank() || source.isBlank()) return
+            val clamped = offsetMs.coerceIn(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
+            val key = lyricOffsetPreferenceKey(identity, source)
+            val editor = prefs.edit()
+            if (clamped == 0) editor.remove(key) else editor.putInt(key, clamped)
+            updateLyricOffsetIndex(prefs, editor, key, identity, source, title, artist, clamped)
+            editor.apply()
         }
         private const val LOG_TAG = "DesktopLyrics"
         private const val CHANNEL_ID = "lobsta_lyrics_overlay"

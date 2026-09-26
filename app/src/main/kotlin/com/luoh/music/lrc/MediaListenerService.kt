@@ -1,4 +1,4 @@
-package com.tcrrry.desktoplyrics
+package com.luoh.music.lrc
 
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification

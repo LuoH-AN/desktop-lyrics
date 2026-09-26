@@ -1,4 +1,4 @@
-package com.tcrrry.desktoplyrics
+package com.luoh.music.lrc
 
 import androidx.appcompat.app.AppCompatDelegate
 

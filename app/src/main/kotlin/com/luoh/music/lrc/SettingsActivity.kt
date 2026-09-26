@@ -1,4 +1,4 @@
-package com.tcrrry.desktoplyrics
+package com.luoh.music.lrc
 
 import android.app.Dialog
 import android.content.Context
@@ -192,16 +192,19 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<View>(R.id.cell_manage_offsets).setOnClickListener {
             startActivity(Intent(this, LyricOffsetMemoryActivity::class.java))
         }
+        findViewById<View>(R.id.cell_custom_lyrics).setOnClickListener {
+            startActivity(Intent(this, CustomLyricsManagerActivity::class.java))
+        }
         // 关于
         findViewById<View>(R.id.cell_check_update).setOnClickListener { checkForUpdates() }
         findViewById<View>(R.id.cell_bilibili).setOnClickListener {
-            openUrl("https://space.bilibili.com/")
+            openUrl("https://space.bilibili.com/487906004")
         }
         findViewById<View>(R.id.cell_github).setOnClickListener {
-            openUrl("https://github.com/tcrrry/desktop-lyrics")
+            openUrl("https://github.com/LuoH-AN/desktop-lyrics")
         }
         findViewById<View>(R.id.cell_privacy).setOnClickListener {
-            openUrl("https://github.com/tcrrry/desktop-lyrics/blob/main/PRIVACY.md")
+            openUrl("https://github.com/LuoH-AN/desktop-lyrics/blob/main/PRIVACY.md")
         }
 
         refreshAll()
@@ -402,10 +405,20 @@ class SettingsActivity : AppCompatActivity() {
         lyricOffsetValue.text = formatOffset(normalized)
         seekLyricOffset.progress = (normalized - LyricsOverlayService.LYRIC_OFFSET_MIN_MS) / 100
         if (LyricsOverlayService.isRunning) {
+            // 悬浮窗在跑：交给它写 per-song 记忆（它知道当前歌词身份）
             startService(Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_SET_LYRIC_OFFSET
                 putExtra(LyricsOverlayService.EXTRA_LYRIC_OFFSET_MS, normalized)
             })
+        } else {
+            // 悬浮窗没跑：用主页最近记录的当前歌词身份，直接写 per-song 记忆，保持与悬浮窗一致
+            val identity = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_IDENTITY, "").orEmpty()
+            val source = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_SOURCE, "").orEmpty()
+            val title = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_TITLE, "").orEmpty()
+            val artist = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_ARTIST, "").orEmpty()
+            if (identity.isNotBlank() && source.isNotBlank()) {
+                LyricsOverlayService.writeLyricOffsetMemory(overlayPrefs, identity, source, title, artist, normalized)
+            }
         }
     }
 
@@ -583,8 +596,9 @@ class SettingsActivity : AppCompatActivity() {
                 } else {
                     Toast.makeText(this@SettingsActivity, "当前已是最新版", Toast.LENGTH_SHORT).show()
                 }
-            }.onFailure {
-                Toast.makeText(this@SettingsActivity, "暂时无法检查更新，请稍后重试", Toast.LENGTH_SHORT).show()
+            }.onFailure { error ->
+                val message = if (error is UpdateChecker.NoReleaseException) "还没有发布版本" else "暂时无法检查更新，请稍后重试"
+                Toast.makeText(this@SettingsActivity, message, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -619,5 +633,5 @@ class SettingsActivity : AppCompatActivity() {
 
     private val currentVersionName: String
         get() = packageManager.getPackageInfo(packageName, 0).versionName
-            .orEmpty().substringBefore('-').ifBlank { "1.07" }
+            .orEmpty().substringBefore('-').ifBlank { "1.0" }
 }

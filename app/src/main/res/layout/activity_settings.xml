@@ -196,6 +196,11 @@
                     <TextView style="@style/Chevron" />
                 </LinearLayout>
                 <View style="@style/CellDivider" />
+                <LinearLayout style="@style/Cell" android:id="@+id/cell_custom_lyrics">
+                    <TextView style="@style/CellTitle" android:text="自定义歌词" />
+                    <TextView style="@style/Chevron" />
+                </LinearLayout>
+                <View style="@style/CellDivider" />
                 <LinearLayout style="@style/Cell" android:id="@+id/cell_manage_sources">
                     <TextView style="@style/CellTitle" android:text="歌词源管理" />
                     <TextView style="@style/Chevron" />

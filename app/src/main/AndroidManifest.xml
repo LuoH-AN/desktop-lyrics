@@ -35,6 +35,9 @@
         <activity android:name=".ApiProfileManagerActivity" android:exported="false" />
         <activity android:name=".LyricOffsetMemoryActivity" android:exported="false" />
         <activity android:name=".LyricSourceManagerActivity" android:exported="false" />
+        <activity android:name=".CustomLyricsManagerActivity" android:exported="false" />
+        <activity android:name=".CustomLyricsEditActivity" android:exported="false"
+            android:taskAffinity="" android:excludeFromRecents="true" />
         <service
             android:name=".MediaListenerService"
             android:exported="true"

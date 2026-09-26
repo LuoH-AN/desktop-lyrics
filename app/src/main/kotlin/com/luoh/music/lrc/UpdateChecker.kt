@@ -1,4 +1,4 @@
-package com.tcrrry.desktoplyrics
+package com.luoh.music.lrc
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -7,9 +7,12 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object UpdateChecker {
-    const val RELEASES_LATEST_URL = "https://github.com/tcrrry/desktop-lyrics/releases/latest"
+    const val RELEASES_LATEST_URL = "https://github.com/LuoH-AN/desktop-lyrics/releases/latest"
     private const val LATEST_API_URL =
-        "https://api.github.com/repos/tcrrry/desktop-lyrics/releases/latest"
+        "https://api.github.com/repos/LuoH-AN/desktop-lyrics/releases/latest"
+
+    /** GitHub 返回 404 表示仓库还没有发布任何 Release。 */
+    class NoReleaseException : Exception("尚未发布任何版本")
 
     data class Release(
         val tag: String,
@@ -29,6 +32,8 @@ object UpdateChecker {
                 setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
             }
             try {
+                // 404 = 仓库还没有任何 Release，单独区分出来给用户友好提示
+                if (connection.responseCode == 404) throw NoReleaseException()
                 if (connection.responseCode !in 200..299) {
                     error("GitHub returned HTTP ${connection.responseCode}")
                 }
@@ -39,7 +44,7 @@ object UpdateChecker {
                 if (version.isBlank()) error("Release version is missing")
                 val apiUrl = json.optString("html_url")
                 val pageUrl = apiUrl.takeIf {
-                    it.startsWith("https://github.com/tcrrry/desktop-lyrics/releases/")
+                    it.startsWith("https://github.com/LuoH-AN/desktop-lyrics/releases/")
                 } ?: RELEASES_LATEST_URL
                 Release(tag.ifBlank { "v$version" }, version, pageUrl, summarize(json.optString("body")))
             } finally {
