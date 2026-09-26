@@ -46,7 +46,6 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var settingsTargetCompact: TextView
     private lateinit var backgroundModeTransparent: TextView
     private lateinit var backgroundModeLow: TextView
-    private lateinit var backgroundModeMedium: TextView
     private lateinit var backgroundModeHigh: TextView
     private lateinit var seekFontSize: SeekBar
     private lateinit var fontSizeValue: TextView
@@ -87,7 +86,6 @@ class SettingsActivity : AppCompatActivity() {
         settingsTargetCompact = findViewById(R.id.settings_target_compact)
         backgroundModeTransparent = findViewById(R.id.background_mode_transparent)
         backgroundModeLow = findViewById(R.id.background_mode_low)
-        backgroundModeMedium = findViewById(R.id.background_mode_medium)
         backgroundModeHigh = findViewById(R.id.background_mode_high)
         seekFontSize = findViewById(R.id.seek_font_size)
         fontSizeValue = findViewById(R.id.font_size_value)
@@ -130,10 +128,9 @@ class SettingsActivity : AppCompatActivity() {
         settingsTargetExpanded.setOnClickListener { setSettingsTarget(false) }
         settingsTargetCompact.setOnClickListener { setSettingsTarget(true) }
 
-        // 动态背景
+        // 背景：透明 / 半透明 / 不透明
         backgroundModeTransparent.setOnClickListener { setBackgroundMode(LyricsOverlayService.BACKGROUND_TRANSPARENT) }
         backgroundModeLow.setOnClickListener { setBackgroundMode(LyricsOverlayService.BACKGROUND_LOW) }
-        backgroundModeMedium.setOnClickListener { setBackgroundMode(LyricsOverlayService.BACKGROUND_MEDIUM) }
         backgroundModeHigh.setOnClickListener { setBackgroundMode(LyricsOverlayService.BACKGROUND_HIGH) }
 
         // 字号
@@ -300,12 +297,13 @@ class SettingsActivity : AppCompatActivity() {
         )
     }
 
-    // ---------- 动态背景 ----------
+    // ---------- 背景：透明 / 半透明 / 不透明 ----------
     private fun setBackgroundMode(mode: String) {
         val normalized = when (mode) {
-            LyricsOverlayService.BACKGROUND_LOW,
+            // 旧的 medium 归并到半透明(low)
             LyricsOverlayService.BACKGROUND_MEDIUM,
-            LyricsOverlayService.BACKGROUND_HIGH -> mode
+            LyricsOverlayService.BACKGROUND_LOW -> LyricsOverlayService.BACKGROUND_LOW
+            LyricsOverlayService.BACKGROUND_HIGH -> LyricsOverlayService.BACKGROUND_HIGH
             else -> LyricsOverlayService.BACKGROUND_TRANSPARENT
         }
         overlayPrefs.edit().putString(backgroundPreferenceKey(), normalized).apply()
@@ -320,19 +318,19 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun updateBackgroundModeUi() {
-        val selected = overlayPrefs.getString(backgroundPreferenceKey(), expandedBackgroundMode())
-        val known = setOf(
-            LyricsOverlayService.BACKGROUND_TRANSPARENT,
+        val stored = overlayPrefs.getString(backgroundPreferenceKey(), expandedBackgroundMode())
+        // 旧值 medium → 半透明(low)；未知 → 默认
+        val effective = when (stored) {
+            LyricsOverlayService.BACKGROUND_TRANSPARENT -> LyricsOverlayService.BACKGROUND_TRANSPARENT
+            LyricsOverlayService.BACKGROUND_HIGH -> LyricsOverlayService.BACKGROUND_HIGH
             LyricsOverlayService.BACKGROUND_LOW,
-            LyricsOverlayService.BACKGROUND_MEDIUM,
-            LyricsOverlayService.BACKGROUND_HIGH
-        )
-        val effective = if (selected in known) selected!! else LyricsOverlayService.BACKGROUND_DEFAULT
+            LyricsOverlayService.BACKGROUND_MEDIUM -> LyricsOverlayService.BACKGROUND_LOW
+            else -> LyricsOverlayService.BACKGROUND_DEFAULT
+        }
         applySeg(
             listOf(
                 backgroundModeTransparent to LyricsOverlayService.BACKGROUND_TRANSPARENT,
                 backgroundModeLow to LyricsOverlayService.BACKGROUND_LOW,
-                backgroundModeMedium to LyricsOverlayService.BACKGROUND_MEDIUM,
                 backgroundModeHigh to LyricsOverlayService.BACKGROUND_HIGH
             ),
             effective

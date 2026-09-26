@@ -106,9 +106,9 @@
                     </LinearLayout>
                 </LinearLayout>
                 <View style="@style/CellDivider" />
-                <!-- 动态背景 四段 -->
+                <!-- 背景 三段：透明 / 半透明 / 不透明 -->
                 <LinearLayout style="@style/CellColumn">
-                    <TextView style="@style/CellColumnLabel" android:text="动态背景" />
+                    <TextView style="@style/CellColumnLabel" android:text="背景" />
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="38dp"
@@ -117,9 +117,8 @@
                         android:orientation="horizontal"
                         android:padding="3dp">
                         <TextView android:id="@+id/background_mode_transparent" style="@style/SegItem" android:text="透明" />
-                        <TextView android:id="@+id/background_mode_low" style="@style/SegItem" android:text="低" />
-                        <TextView android:id="@+id/background_mode_medium" style="@style/SegItem" android:text="中" />
-                        <TextView android:id="@+id/background_mode_high" style="@style/SegItem" android:text="高" />
+                        <TextView android:id="@+id/background_mode_low" style="@style/SegItem" android:text="半透明" />
+                        <TextView android:id="@+id/background_mode_high" style="@style/SegItem" android:text="不透明" />
                     </LinearLayout>
                 </LinearLayout>
             </LinearLayout>

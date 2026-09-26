@@ -1528,8 +1528,8 @@ class LyricsOverlayService : Service() {
 
     private fun normalizedBackgroundMode(value: String?): String = when (value) {
         BACKGROUND_TRANSPARENT -> BACKGROUND_TRANSPARENT
-        BACKGROUND_LOW -> BACKGROUND_LOW
-        BACKGROUND_MEDIUM -> BACKGROUND_MEDIUM
+        // medium 归并到半透明(low)；只保留 透明/半透明/不透明 三档
+        BACKGROUND_LOW, BACKGROUND_MEDIUM -> BACKGROUND_LOW
         BACKGROUND_HIGH -> BACKGROUND_HIGH
         else -> BACKGROUND_DEFAULT
     }
@@ -1937,7 +1937,8 @@ class LyricsOverlayService : Service() {
         const val BACKGROUND_LOW = "low"
         const val BACKGROUND_MEDIUM = "medium"
         const val BACKGROUND_HIGH = "high"
-        const val BACKGROUND_DEFAULT = BACKGROUND_HIGH
+        // 桌面歌词默认透明浮在桌面（原为不透明 high）
+        const val BACKGROUND_DEFAULT = BACKGROUND_TRANSPARENT
         const val FONT_SCALE_MIN_PERCENT = 35
         const val FONT_SCALE_MAX_PERCENT = 150
         const val FONT_SCALE_DEFAULT_PERCENT = 100

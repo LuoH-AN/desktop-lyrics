@@ -60,12 +60,12 @@
       opacity:.78; transition:opacity 1.4s ease;
       filter:saturate(1.28) contrast(1.08);
     }
-    body.background-medium #fluid,body.background-high #fluid { display:block; }
+    body.background-medium #fluid,body.background-high #fluid { display:none; }
     #low-fluid {
       position:fixed; inset:0; z-index:0; display:none; overflow:hidden;
       background:#111217; contain:strict;
     }
-    body.background-low #low-fluid { display:block; }
+    body.background-low #low-fluid { display:none; }
     .low-field {
       position:absolute; inset:-30%; opacity:0;
       overflow:hidden; transform:translateZ(0);
@@ -116,6 +116,7 @@
     .surface {
       height:100%; overflow:hidden; border-radius:16px;
       background:transparent; border:0;
+      transition:background-color .3s ease;
     }
     #waiting {
       height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -237,6 +238,9 @@
     .line.active {
       color:rgb(var(--lyric-rgb)); transform:scale(1); font-weight:760;
     }
+    /* 逐字歌词行：当前行颜色不做过渡（逐字 wipe 自己控制点亮），避免整行先淡淡地染白再被逐字覆盖 */
+    .line.has-words { transition:transform .55s cubic-bezier(.22,.8,.28,1); }
+    .line.has-words.active { color:rgba(var(--lyric-rgb),.34); }
     .line:not(.active):not(.near) { transform:scale(.86); }
     .line.past { color:rgba(var(--lyric-rgb),.22); }
     .line.loading,.line.empty { color:rgba(var(--lyric-rgb),.55); font-weight:620; }
@@ -297,23 +301,23 @@
     }
     .progress-time.total { text-align:right; }
     body.paused #fluid { opacity:.52; }
+    /* 三档纯色底：透明 / 半透明 / 不透明。不再有毛玻璃/动态渐变特效。
+       内部沿用 transparent / low / high 三个键；medium 归并到 low（半透明）。 */
+    body.background-transparent .surface { background:transparent; }
+    body.background-low .surface,
+    body.background-medium .surface { background:rgba(12,12,14,.55); }
+    body.background-high .surface { background:rgba(12,12,14,.96); }
+    /* 展开态整窗歌词也跟随（surface 撑满） */
     body.background-transparent { background:transparent; }
-    body.background-transparent #fluid,
-    body.background-transparent #low-fluid,
-    body.background-transparent .shade { display:none; }
-    body.background-transparent .surface {
-      border-color:transparent; box-shadow:none; background:transparent;
-      backdrop-filter:none; -webkit-backdrop-filter:none;
-    }
     body.background-transparent .lyrics-viewport::before,
     body.background-transparent .lyrics-viewport::after { display:none; }
-    body.background-low .shade { backdrop-filter:none; -webkit-backdrop-filter:none; }
-    body.background-low .surface { backdrop-filter:none; -webkit-backdrop-filter:none; }
     body.compact #app { padding:0 14px 0 0; }
-    body.compact .surface {
-      border:0; border-radius:0; box-shadow:none; background:transparent;
-      backdrop-filter:none; -webkit-backdrop-filter:none;
-    }
+    /* 小窗(收起)态：surface 无圆角撑满，背景跟随三档设定 */
+    body.compact.background-transparent .surface { background:transparent; }
+    body.compact.background-low .surface,
+    body.compact.background-medium .surface { background:rgba(12,12,14,.55); }
+    body.compact.background-high .surface { background:rgba(12,12,14,.96); }
+    body.compact .surface { border:0; border-radius:0; box-shadow:none; }
     body.compact #player { padding:0; gap:0; grid-template-rows:minmax(0,1fr); }
     body.compact .metadata,body.compact .transport-row,body.compact .footer { display:none; }
     body.compact .lyrics-viewport { display:none; }
@@ -681,9 +685,10 @@
         }));
         return;
       }
-      ui.lyrics.innerHTML = playback.lyrics.map((line,index) =>
-        '<div class="line" data-i="' + index + '">' + lineHtml(line) + '</div>'
-      ).join('');
+      ui.lyrics.innerHTML = playback.lyrics.map((line,index) => {
+        const hasWords = translationMode!=='translated' && Array.isArray(line.words) && line.words.length;
+        return '<div class="line' + (hasWords?' has-words':'') + '" data-i="' + index + '">' + lineHtml(line) + '</div>';
+      }).join('');
       requestAnimationFrame(()=>requestAnimationFrame(()=>{
         if(relayoutEpoch!==lyricsRelayoutEpoch)return;
         updateActiveLine(lyricPosition(),true);
@@ -1948,13 +1953,13 @@
         recenterAfterLayout();
       },
       setBackgroundMode(value) {
-        backgroundMode = value === 'high' ? 'high' : value === 'medium' ? 'medium' : value === 'low' ? 'low' : 'transparent';
+        // 只保留三档：透明 / 半透明(low) / 不透明(high)。medium 归并到半透明。动态特效已移除。
+        backgroundMode = value === 'high' ? 'high' : (value === 'medium' || value === 'low') ? 'low' : 'transparent';
         document.body.classList.toggle('background-transparent', backgroundMode === 'transparent');
         document.body.classList.toggle('background-low', backgroundMode === 'low');
-        document.body.classList.toggle('background-medium', backgroundMode === 'medium');
-        document.body.classList.toggle('background-high', backgroundMode === 'high');
-        if(backgroundMode==='medium'||backgroundMode==='high')ensureFluidRenderer();
-        else if(fluidRenderer)fluidRenderer.stop();
+        document.body.classList.remove('background-medium','background-high');
+        if(backgroundMode==='high')document.body.classList.add('background-high');
+        if(fluidRenderer)fluidRenderer.stop();
       }
     };
 
