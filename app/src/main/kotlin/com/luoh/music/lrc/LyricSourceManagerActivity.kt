@@ -147,8 +147,12 @@ class LyricSourceManagerActivity : AppCompatActivity() {
                     .filter { it.isNotBlank() }.take(16).joinToString("\n")
                 addView(label(preview, 14f))
                 addView(button(if(current) "正在使用" else "选用这个版本") {
-                    // 手动选用 → 固定为手动记忆（清掉 auto/needsReview），悬浮窗与主页都以它为准
-                    update(key) { it.put("candidate", candidate).put("needsReview", false).remove("auto").put("at", System.currentTimeMillis()) }
+                    // 手动选用 → 固定为手动记忆（清掉 auto/needsReview），悬浮窗与主页都以它为准。
+                    // 注意 JSONObject.remove() 返回被删值而非 this，不能接在 put 链上。
+                    update(key) {
+                        it.remove("auto")
+                        it.put("candidate", candidate).put("needsReview", false).put("at", System.currentTimeMillis())
+                    }
                 }.apply { isEnabled = !current && !busy })
             })
         }
