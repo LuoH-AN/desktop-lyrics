@@ -1748,12 +1748,16 @@
 
       const key = normalizedKey(data.track || '', data.artist || '');
       const changed = key !== playback.key;
+      // 在覆盖 playback 之前，算出"此刻本地外推到的位置"，用于平滑对齐。
+      // MediaSession 报告的位置常有抖动/滞后，直接硬覆盖会让逐字进度一卡一卡。
+      const wasPlaying = playback.state === 'playing';
+      const extrapolatedBefore = currentPosition();
       playback.hasSession = true;
       playback.track = data.track || '';
       playback.artist = data.artist || '';
       playback.album = data.album || '';
       playback.state = data.state || 'paused';
-      playback.positionMs = Number(data.positionMs || 0);
+      const reportedPositionMs = Number(data.positionMs || 0);
       playback.durationMs = Number(data.durationMs || 0);
       playback.speed = playback.state === 'playing' ? Number(data.speed || 1) : 0;
       playback.canPlay = !!data.canPlay;
@@ -1761,6 +1765,14 @@
       playback.canPrevious = !!data.canPrevious;
       playback.canNext = !!data.canNext;
       playback.canSeek = !!data.canSeek;
+      // 平滑对齐：同一首歌、持续播放中，报告位置与外推位置只是小幅漂移(≤700ms)时，
+      // 保持本地外推的连续性(不打断逐字)；只有大跳(真实 seek / 换歌 / 从暂停恢复)才硬对齐。
+      if (!changed && wasPlaying && playback.state === 'playing' &&
+          Math.abs(reportedPositionMs - extrapolatedBefore) <= 700) {
+        playback.positionMs = extrapolatedBefore;
+      } else {
+        playback.positionMs = reportedPositionMs;
+      }
       playback.receivedAt = performance.now();
 
       document.body.classList.add('has-session');
