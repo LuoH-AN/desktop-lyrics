@@ -49,6 +49,7 @@
     font-family:-apple-system,"SF Pro Display","PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;
     -webkit-font-smoothing:antialiased;
     user-select:none; -webkit-user-select:none;
+    transition:background-color .4s ease;
   }
   body { display:flex; flex-direction:column; }
 
@@ -106,9 +107,10 @@
     -webkit-text-fill-color:transparent; color:transparent;
   }
 
-  /* 间奏三点 */
+  /* 间奏三点：绝对定位，跟着当前歌词行左对齐显示，不再固定在左上角 */
   #interlude {
-    display:none; gap:13px; padding:14px 0; align-items:center;
+    display:none; position:absolute; left:26px; gap:11px; align-items:center;
+    pointer-events:none;
   }
   #interlude.show { display:flex; }
   #interlude i {
@@ -137,9 +139,9 @@
   #meta { min-width:0; flex:1; display:flex; align-items:center; justify-content:space-between; gap:10px; }
   #metaText { min-width:0; }
   #song { font-size:16px; font-weight:700; letter-spacing:-.3px; color:var(--song);
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:color .4s ease; }
   #singer { font-size:13px; font-weight:500; margin-top:2px; color:var(--singer);
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:color .4s ease; }
   #more {
     flex-shrink:0; width:36px; height:34px; margin-right:-8px;
     display:flex; align-items:center; justify-content:center;
@@ -463,15 +465,15 @@
       }
     }
 
-    // 间奏三点
+    // 间奏三点：定位在当前行下方，跟着歌词一起走（而不是固定屏幕左上角）
     if(inInterlude){
       interlude.classList.add('show');
-      // 三点位置跟着当前行
       var anchorIdx = idx>=0?idx:0;
       var anchorEl = lineEls[anchorIdx];
       if(anchorEl){
-        var ty = anchorEl.offsetTop + anchorEl.offsetHeight + 4 +
-                 (parseFloat(trackEl.style.transform.replace(/[^\-0-9.]/g,''))||0);
+        var trackTy = parseFloat(trackEl.style.transform.replace(/[^\-0-9.]/g,''))||0;
+        var ty = trackTy + anchorEl.offsetTop + anchorEl.offsetHeight + 8;
+        interlude.style.top = ty + 'px';
       }
       var ratio = (pos-gapStart)/(gapEnd-gapStart);
       var dots = interlude.children;

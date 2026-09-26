@@ -68,6 +68,13 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
 
+        // 切主题会 recreate 本页，重新 inflate 整个布局本身有成本；
+        // 给根视图一个淡入，柔化重建时的“硬闪”，主观上像有过渡动画。
+        findViewById<View>(android.R.id.content).apply {
+            alpha = 0f
+            animate().alpha(1f).setDuration(180L).start()
+        }
+
         findViewById<TextView>(R.id.settings_back).setOnClickListener { finish() }
 
         listenerState = findViewById(R.id.listener_permission_state)
