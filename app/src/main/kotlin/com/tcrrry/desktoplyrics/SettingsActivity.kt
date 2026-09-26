@@ -63,6 +63,13 @@ class SettingsActivity : AppCompatActivity() {
 
     private var settingsTargetIsCompact = false
 
+    /** 悬浮窗当前实际显示的是收起(小窗)还是展开。设置页默认对齐它，
+     *  避免"改了半天改的是另一套(展开/收起)，当前看的窗根本不刷新"。 */
+    private fun currentOverlayIsCompact(): Boolean =
+        LyricsOverlayService.instance?.let {
+            LyricsOverlayService.isRunning && it.isDisplayingCompact()
+        } ?: overlayPrefs.getBoolean("compact", false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
@@ -101,6 +108,9 @@ class SettingsActivity : AppCompatActivity() {
         translationTranslated = findViewById(R.id.translation_translated)
         versionValue = findViewById(R.id.version_value)
         versionValue.text = currentVersionName
+
+        // 设置页默认对齐悬浮窗当前实际模式（收起/展开），改哪套就是看得见的那套。
+        settingsTargetIsCompact = currentOverlayIsCompact()
 
         // 悬浮窗开关
         findViewById<View>(R.id.cell_overlay_toggle).setOnClickListener { toggleOverlay() }

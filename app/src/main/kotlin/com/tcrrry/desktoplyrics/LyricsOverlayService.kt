@@ -1518,6 +1518,9 @@ class LyricsOverlayService : Service() {
 
     fun currentLyricOffsetMs(): Int = lyricOffsetMs
 
+    /** 悬浮窗当前是否显示为收起(小窗)。全屏态视为展开。给设置页对齐用。 */
+    fun isDisplayingCompact(): Boolean = fullscreenHost == null && compact
+
     private fun applyTranslationMode() {
         val encoded = JSONObject.quote(translationMode)
         webView?.evaluateJavascript(

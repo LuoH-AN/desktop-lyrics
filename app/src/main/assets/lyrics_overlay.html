@@ -1197,6 +1197,15 @@
         }
         if(start<=smoothPosition)activeIndex=index;
       });
+      // 只有真正超出一屏宽度的长句才允许横向跟随左移；一屏能显示完的短句锁死不动
+      // （用户反馈：短句也跟着往左挪很干扰，长句左右滚动可以接受）。
+      const overflowing=contentWidth>viewportWidth+4;
+      if(!overflowing){
+        compactWordFollow.target=0;
+        compactWordFollow.shift=0;
+        content.style.transform='none';
+        return;
+      }
       const activeWord=line.words[activeIndex];
       const activeSpan=spans[activeIndex];
       if(!activeWord||!activeSpan)return;
