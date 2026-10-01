@@ -102,7 +102,8 @@ jobs:
                       key=lambda p: tuple(map(int, re.findall(r'\d+', p.name))))
           signature = subprocess.check_output([str(tools / 'apksigner'), 'verify', '--verbose', '--print-certs', str(apk)], text=True)
           print(signature)
-          assert f"Signer #1 certificate SHA-256 digest: {os.environ['RELEASE_CERT_SHA256']}" in signature, 'Unexpected release signing certificate'
+          certificates = {value.lower() for value in re.findall(r'certificate SHA-256 digest:\s*([0-9a-fA-F]{64})', signature)}
+          assert certificates == {os.environ['RELEASE_CERT_SHA256']}, 'Unexpected release signing certificate'
           badging = subprocess.check_output([str(tools / 'aapt'), 'dump', 'badging', str(apk)], text=True)
           package = badging.splitlines()[0]
           assert "name='com.luoh.music.lrc'" in package, package
