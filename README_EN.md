@@ -3,7 +3,7 @@
 
 # Desktop Lyrics for Android
 
-**A polished, real-time, freely resizable floating lyrics overlay for Android.**
+**A polished, real-time, minimal floating lyrics overlay for Android.**
 
 [Video demo](https://www.bilibili.com/video/BV1jNu66eEkr/) · [Download](https://github.com/LuoH-AN/desktop-lyrics/releases/latest) · [简体中文](./README.md) · [Privacy](./PRIVACY.md) · [Changelog](./CHANGELOG.md)
 
@@ -23,33 +23,26 @@ The app queries public lyrics providers directly and does not require a private 
 
 [![Desktop Lyrics for Android — real-time floating lyrics for Apple Music and Spotify](./docs/assets/desktop-lyrics-cover.png)](https://www.bilibili.com/video/BV1jNu66eEkr/)
 
-Watch on Bilibili: [Desktop Lyrics for Android — Apple Music / Spotify real-time floating lyrics](https://www.bilibili.com/video/BV1jNu66eEkr/).
+The video shows an earlier UI; the current source uses only a compact lyrics window. Watch on Bilibili: [Desktop Lyrics for Android — Apple Music / Spotify real-time floating lyrics](https://www.bilibili.com/video/BV1jNu66eEkr/).
 
 ## Highlights
 
 - Local, real-time track title, artist, album, playback state, progress, and artwork
 - Parallel searches across LRCLIB, QQ Music, and NetEase Cloud Music, ranked by title, artist, album, duration, and version metadata; an iTunes catalog lookup can supply localized aliases when every direct search fails
 - QQ Music and NetEase word-timed lyrics and official translations, with original, bilingual, or translated display modes
-- In-overlay previous, play/pause, and next controls, plus a seekable progress bar
-- Full and compact overlay modes with continuous free resizing and dragging
-- Rotate all full-overlay content by 90° inside a fixed outer frame without rotating the system UI; the horizontal view uses a 25% media / 75% lyrics split
-- Double-tap the resize icon for an immersive full-screen lyrics view with its own portrait/landscape rotation
-- Time-aware, one-direction lyric scrolling in compact mode
-- Manual lyric browsing with inertial scrolling; tap a timed lyric line to seek, with automatic live-follow recovery
-- Adjustable lyric font size from 35% to 150%, with a responsive minimum height
-- Color presets, a full RGB color picker, and a ±5-second lyric timing offset remembered separately for each track and lyrics source
+- A compact, lyrics-only overlay with drag, position lock/unlock, and close controls; no expanded mode, overlay full-screen view, rotation, or popup menu
+- Playback controls remain on the home screen, alongside a persistent overlay switch
+- Show 0–2 preceding and following lines, with automatic height and time-aware scrolling of the current line
+- Adjustable font size from 35% to 150%, with an appearance/context preview in settings
+- Explicit “0.1 s earlier”, “0.1 s later”, and reset actions within ±5 seconds, remembered per track and source
 - When no lyrics can be found, manually supply a standard LRC file: matched by title + artist, supports word-timed tags, translations (a second line under the same timestamp), and `[offset:]`; once set, both the home screen and the overlay use it without going online, and deleting it restores automatic matching
 - Untimed plain lyrics remain usable with a clear label and smooth progress-based scrolling
 - Optional on-device translation with downloadable ML Kit language packs, plus editable DeepSeek, GLM, Gemini, or custom Chat Completions-compatible API profiles
-- Transparent, low-load, medium-load, and high-load album-color backgrounds; medium load throttles only the animated background, not word highlighting
-- Media volume plus responsive playback controls and marquee information pills for narrow overlays
-- A minimum width of roughly one third of the screen, with seamless marquee titles
+- Transparent, translucent, and opaque overlay backgrounds
 - Keeps the screen awake while the overlay is visible and releases that behavior when closed
-- Tries multiple candidates, rejects empty, title-only, credit-only, and provider-placeholder lyrics, supports symbol-only titles and cross-script aliases, and allows up to 10 seconds on slow networks
-- Tap the source pill to cycle providers, double-tap to rematch the current provider and remember the selected recording, or long-press to restore automatic matching; a failed rematch keeps the current lyrics
+- Tries multiple candidates, rejects empty, title-only, credit-only, and provider-placeholder lyrics, supports symbol-only titles and cross-script aliases, with a 10-second budget per parallel provider round; identity lookup and subsequent rounds can take longer overall
 - Manage remembered lyric choices by song, search the history, preview QQ Music, NetEase, and LRCLIB versions, choose a result, restore the initial match, or clear the complete matching cache
-- Refined settings layout with a pure-black background and red accent, a separate dynamic-background card, stacked font-size and timing-offset controls, and side-by-side source/offset managers
-- Expanded and compact modes remember independent lyric size, color, dynamic background, window geometry, and position; full-screen lyrics use the expanded appearance
+- Grouped monochrome settings and confirmation before clearing matching records or deleting synchronization memories
 - A lightweight GitHub Releases check runs at most once per day when opening settings; update prompts can be postponed or ignored for that release, and a manual check remains available
 
 ## Requirements and compatibility
@@ -68,12 +61,11 @@ Long-running behavior may vary with vendor-specific battery restrictions. If the
 1. Download the latest APK from [Releases](https://github.com/LuoH-AN/desktop-lyrics/releases/latest).
 2. Install and open Desktop Lyrics.
 3. Grant Notification Access and the Display over other apps permission.
-4. Start the floating lyrics overlay and play music.
-5. Tap the resize icon to switch modes, or long-press and drag it for continuous resizing.
-6. In full mode, tap the rotation icon to turn the overlay content by 90° while keeping the outer footprint unchanged.
-7. Use the playback buttons or drag the progress bar to control the active player. After browsing the lyrics, tap a timed line to seek to it.
-8. If the lyrics are mismatched, double-tap the QQ Music, NetEase, or LRCLIB source pill to try the next candidate from that provider. Long-press it to clear the remembered choice for that track and provider.
-9. When lyrics can never be found, paste a standard LRC file from the home ⋯ menu or Settings › Custom lyrics; that track will then always use your specified version.
+4. Turn on the Desktop Lyrics switch on the home screen, then play music. Granting permission does not itself enable the overlay.
+5. Drag the lyrics area to move the window. Use the lock icon to lock/unlock its position, or × to close it.
+6. Adjust font size and preceding/following line counts in settings. Zero context shows only the current line, plus its translation when enabled.
+7. If lyrics lag, make them earlier; if they lead, make them later.
+8. Missing lyrics show a message without a retry button. Version management and custom LRC import remain available in the app settings.
 
 ## Permissions and privacy
 

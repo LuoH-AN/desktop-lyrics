@@ -2,6 +2,8 @@ package com.luoh.music.lrc
 
 import android.annotation.SuppressLint
 import android.content.ComponentName
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.Context
 import android.content.Intent
 import android.media.MediaMetadata
@@ -21,6 +23,7 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +47,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var web: WebView
     private lateinit var gate: View
     private lateinit var gateStatus: TextView
+    private lateinit var overlayToggle: SwitchCompat
+    private var updatingOverlayToggle = false
+    private val overlayStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) = updateOverlayToggle()
+    }
 
     private val overlayPrefs by lazy {
         getSharedPreferences(LyricsOverlayService.PREFS_NAME, Context.MODE_PRIVATE)
@@ -112,6 +120,15 @@ class MainActivity : AppCompatActivity() {
         web = findViewById(R.id.lyric_web)
         gate = findViewById(R.id.gate_overlay)
         gateStatus = findViewById(R.id.gate_status)
+        overlayToggle = findViewById(R.id.main_overlay_toggle)
+        overlayToggle.setOnCheckedChangeListener { _, checked ->
+            if (!updatingOverlayToggle) {
+                if (checked) tryStartOverlay()
+                else stopService(Intent(this, LyricsOverlayService::class.java))
+                updateOverlayToggle()
+            }
+        }
+        findViewById<View>(R.id.main_settings).setOnClickListener { openSettings() }
 
         web.settings.apply {
             javaScriptEnabled = true
@@ -144,6 +161,19 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.gate_start).setOnClickListener { tryStartOverlay() }
         findViewById<TextView>(R.id.gate_settings_link).setOnClickListener { openSettings() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        ContextCompat.registerReceiver(
+            this, overlayStateReceiver, IntentFilter(LyricsOverlayService.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+    }
+
+    override fun onStop() {
+        unregisterReceiver(overlayStateReceiver)
+        super.onStop()
     }
 
     override fun onResume() {
@@ -191,7 +221,14 @@ class MainActivity : AppCompatActivity() {
     private fun hasOverlay(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
 
+    private fun updateOverlayToggle() {
+        updatingOverlayToggle = true
+        overlayToggle.isChecked = LyricsOverlayService.isRunning
+        updatingOverlayToggle = false
+    }
+
     private fun updateGate() {
+        updateOverlayToggle()
         val listenerOk = hasListener()
         val overlayOk = hasOverlay()
         // 只要有通知使用权就能读歌显示歌词页；两者都齐才能开悬浮窗
@@ -200,8 +237,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             gate.visibility = View.VISIBLE
             gateStatus.text = when {
-                !listenerOk && !overlayOk -> "需要通知使用权读取播放信息；开悬浮窗还需悬浮窗权限"
-                !listenerOk -> "需要通知使用权，用于读取当前播放的歌曲信息"
+                !listenerOk && !overlayOk -> "通知使用权用于获取正在播放的歌曲，不读取聊天通知正文。\n开启桌面歌词还需悬浮窗权限；授权后可在主页打开开关。"
+                !listenerOk -> "通知使用权用于获取正在播放的歌曲，不读取聊天通知正文。"
                 else -> "准备就绪"
             }
         }
@@ -307,10 +344,26 @@ class MainActivity : AppCompatActivity() {
         return ""
     }
 
+    private fun clearTrackState() {
+        if (lastTrackKey.isNotEmpty()) lyricRequestId++
+        lastTrackKey = ""
+        currentTrack = ""
+        currentArtist = ""
+        currentAlbum = ""
+        currentDurationMs = 0L
+        currentPayloadSignature = ""
+        currentLyricIdentity = ""
+        currentLyricSource = ""
+        if (!LyricsOverlayService.isRunning) {
+            LyricsOverlayService.rememberActiveLyric(overlayPrefs, "", "", "", "")
+        }
+    }
+
     private fun pushSnapshot() {
         if (!webReady) return
         val c = controller
         if (c == null) {
+            clearTrackState()
             evalJs("window.LyricHome && window.LyricHome.setSnapshot(${jsonStr(JSONObject().put("track", "").toString())});")
             return
         }
@@ -339,7 +392,7 @@ class MainActivity : AppCompatActivity() {
             // 第一帧（恢复现场）不算切歌，避免把正在播放的位置误判成旧歌残留而卡在 0
             trackChangedAtElapsed = if (firstSnapshotSinceMonitor) 0L else SystemClock.elapsedRealtime()
         } else if (title.isBlank()) {
-            lastTrackKey = ""
+            clearTrackState()
         }
         firstSnapshotSinceMonitor = false
 

@@ -29,7 +29,6 @@ import android.provider.Settings
 import android.util.Log
 import android.util.Base64
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -80,30 +79,16 @@ class LyricsOverlayService : Service() {
     private var overlayContent: FrameLayout? = null
     private var chromeBar: LinearLayout? = null
     private var dragTouchArea: View? = null
-    private var rotateButton: TextView? = null
-    private var scaleButton: TextView? = null
+    private var lockButton: TextView? = null
     private var closeButton: TextView? = null
     private var webView: WebView? = null
     private var windowParams: WindowManager.LayoutParams? = null
     private var webReady = false
-    private var fullscreenHost: FrameLayout? = null
-    private var overlayWebHost: ViewGroup? = null
-    private var singleTap: Runnable? = null
-    private var compact = false
-    private val hideCompactControls = Runnable {
-        if (compact) chromeBar?.animate()?.alpha(0f)?.setDuration(350)?.withEndAction {
-            if (compact && chromeBar?.alpha == 0f) chromeBar?.visibility = View.INVISIBLE
-        }?.start()
-    }
-
-    private fun revealCompactControls(scheduleHide: Boolean = true) {
-        mainHandler.removeCallbacks(hideCompactControls)
-        chromeBar?.animate()?.cancel()
-        chromeBar?.visibility = View.VISIBLE
-        chromeBar?.animate()?.alpha(1f)?.setDuration(180)?.start()
-        if (compact && scheduleHide) mainHandler.postDelayed(hideCompactControls, 2500L)
-    }
-    private var overlayRotated = false
+    private val compact = true
+    private val overlayRotated = false
+    private var positionLocked = false
+    private var compactHasLyrics = false
+    private var compactHasTranslation = false
     private var backgroundMode = BACKGROUND_DEFAULT
     private var fontScalePercent = FONT_SCALE_DEFAULT_PERCENT
     private var lyricColor = LYRIC_COLOR_DEFAULT
@@ -127,7 +112,6 @@ class LyricsOverlayService : Service() {
     private var cachedArtworkKey = ""
     private var cachedArtworkDataUrl = ""
     private var snapshotScheduled = false
-    private var closeBlockedUntilElapsedMs = 0L
     @Volatile private var latestLyricsRequestId = 0
     private var supplementJob: kotlinx.coroutines.Job? = null
     private var supplementGeneration = 0
@@ -185,13 +169,14 @@ class LyricsOverlayService : Service() {
         compactLyricColor = normalizedLyricColor(
             prefs.getString(PREF_LYRIC_COLOR_COMPACT, expandedLyricColor)
         )
-        syncActiveVisualPreferences(false)
+        syncActiveVisualPreferences(true)
         lyricOffsetMs = prefs.getInt(PREF_LYRIC_OFFSET_MS, 0)
             .coerceIn(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
         translationMode = normalizedTranslationMode(
             prefs.getString(PREF_TRANSLATION_MODE, TRANSLATION_BILINGUAL)
         )
-        overlayRotated = prefs.getBoolean(PREF_OVERLAY_ROTATED, false)
+        positionLocked = prefs.getBoolean(PREF_POSITION_LOCKED, false)
+        prefs.edit().putBoolean("compact", true).putBoolean(PREF_OVERLAY_ROTATED, false).apply()
         createNotificationChannel()
     }
 
@@ -207,6 +192,11 @@ class LyricsOverlayService : Service() {
         if (intent?.action == ACTION_STOP) {
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        if (intent?.action == ACTION_SET_CONTEXT) {
+            applyCompactLayout()
+            if (overlayRoot != null) return START_STICKY
         }
 
         if (intent?.action == ACTION_SET_BACKGROUND) {
@@ -228,7 +218,6 @@ class LyricsOverlayService : Service() {
 
         if (intent?.action == ACTION_SET_FONT_SCALE) {
             val targetCompact = intent.getBooleanExtra(EXTRA_TARGET_COMPACT, false)
-            val previousPercent = fontScalePercent
             val value = normalizedFontScale(
                 intent.getIntExtra(EXTRA_FONT_SCALE_PERCENT, FONT_SCALE_DEFAULT_PERCENT)
             )
@@ -239,10 +228,7 @@ class LyricsOverlayService : Service() {
             ).apply()
             if (displayedVisualTargetIsCompact() == targetCompact) {
                 fontScalePercent = value
-                applyFontScale(
-                    previousPercent,
-                    adjustCompactHeight = targetCompact && fullscreenHost == null
-                )
+                applyFontScale()
             }
             if (overlayRoot != null) return START_STICKY
         }
@@ -263,6 +249,12 @@ class LyricsOverlayService : Service() {
         }
 
         if (intent?.action == ACTION_SET_LYRIC_OFFSET) {
+            val expectedKey = intent.getStringExtra(EXTRA_LYRIC_OFFSET_MEMORY_KEY)
+            if (expectedKey != null && expectedKey != activeLyricOffsetPreferenceKey()) {
+                // 设置页已保存目标歌曲的记忆；切歌后不要把这条消息套到另一首歌上。
+                if (overlayRoot == null) stopSelf()
+                return if (overlayRoot == null) START_NOT_STICKY else START_STICKY
+            }
             lyricOffsetMs = intent.getIntExtra(EXTRA_LYRIC_OFFSET_MS, 0)
                 .coerceIn(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
             val editor = prefs.edit().putInt(PREF_LYRIC_OFFSET_MS, lyricOffsetMs)
@@ -348,8 +340,7 @@ class LyricsOverlayService : Service() {
         overlayContent = null
         chromeBar = null
         dragTouchArea = null
-        rotateButton = null
-        scaleButton = null
+        lockButton = null
         closeButton = null
         isRunning = false
         announceOverlayState()
@@ -371,6 +362,16 @@ class LyricsOverlayService : Service() {
     }
 
     private inner class LyricsJavascriptBridge {
+        @JavascriptInterface
+        fun setCompactContentState(hasLyrics: Boolean, hasTranslation: Boolean) {
+            mainHandler.post {
+                if (compactHasLyrics == hasLyrics && compactHasTranslation == hasTranslation) return@post
+                compactHasLyrics = hasLyrics
+                compactHasTranslation = hasTranslation
+                resizeCompactWindow()
+            }
+        }
+
         @JavascriptInterface
         fun lyricSourceOffset(identity: String, source: String, title: String, artist: String): Int {
             val safeIdentity = identity.trim().take(600)
@@ -690,40 +691,11 @@ class LyricsOverlayService : Service() {
             min(dp(360), max(1, safeBounds.width() - dp(24)))
         )
         val storedCompactWidth = prefs.getInt(PREF_COMPACT_WIDTH, storedExpandedWidth)
-        val wasCompact = prefs.getBoolean("compact", false)
-        val storedNormalHeight = prefs.getInt("height", dp(520))
-        syncActiveVisualPreferences(wasCompact)
-        val compactMinimumHeight = dp(compactMinimumHeightDp(compactFontScalePercent))
-        val storedCompactHeight = prefs.getInt("compact_height_v3", max(dp(48), compactMinimumHeight))
-        val activeStoredHeight = if (wasCompact) storedCompactHeight else storedNormalHeight
-        compact = activeStoredHeight <= dp(COMPACT_MAX_HEIGHT_DP)
-        syncActiveVisualPreferences(compact)
-        val normalHeightSource = if (!compact && wasCompact) activeStoredHeight else storedNormalHeight
-        val compactHeightSource = if (compact && !wasCompact) activeStoredHeight else storedCompactHeight
-        val normalSize = fittedLogicalOverlaySize(
-            storedExpandedWidth,
-            normalHeightSource,
-            isCompact = false,
-            rotated = overlayRotated,
-            safeBounds = safeBounds
+        syncActiveVisualPreferences(true)
+        val activeWindowSize = fittedLogicalOverlaySize(
+            storedCompactWidth, desiredCompactHeight(), isCompact = true,
+            rotated = false, safeBounds = safeBounds
         )
-        val compactSize = fittedLogicalOverlaySize(
-            storedCompactWidth,
-            compactHeightSource,
-            isCompact = true,
-            rotated = overlayRotated,
-            safeBounds = safeBounds
-        )
-        val normalHeight = normalSize.second
-        val compactHeight = compactSize.second
-        val activeLogicalSize = if (compact) compactSize else normalSize
-        val activeWindowSize = logicalToWindowSize(activeLogicalSize, overlayRotated)
-        if (compact != wasCompact) {
-            val migration = prefs.edit().putBoolean("compact", compact)
-            if (compact) migration.putInt("compact_height_v3", compactHeight)
-            else migration.putInt("height", normalHeight)
-            migration.apply()
-        }
 
         val params = WindowManager.LayoutParams(
             activeWindowSize.first,
@@ -778,7 +750,7 @@ class LyricsOverlayService : Service() {
         overlayRoot = root
         root.setOnApplyWindowInsetsListener { _, insets ->
             mainHandler.post {
-                if (fullscreenHost == null) {
+                run {
                     val safe = currentSafeDisplayBounds()
                     windowParams?.let { lp ->
                         val x = lp.x.coerceIn(safe.left, max(safe.left, safe.right - lp.width))
@@ -816,190 +788,49 @@ class LyricsOverlayService : Service() {
         val dragArea = View(this)
         dragTouchArea = dragArea
 
-        val closeControl = chromeButton("") {
-            if (SystemClock.elapsedRealtime() >= closeBlockedUntilElapsedMs) {
-                stopSelf()
-            }
-        }.apply {
+        closeButton = chromeButton("") { stopSelf() }.apply {
             contentDescription = "关闭悬浮窗"
             setChromeIcon(this, R.drawable.ic_overlay_close)
         }
-        closeButton = closeControl
-
-        val resizeButton = chromeButton("") {
-            val pending = singleTap
-            if (pending != null) {
-                mainHandler.removeCallbacks(pending)
-                singleTap = null
-                startActivity(Intent(this, FullscreenLyricsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            } else {
-                singleTap = Runnable { singleTap = null; toggleCompact() }.also {
-                    mainHandler.postDelayed(it, ViewConfiguration.getDoubleTapTimeout().toLong())
-                }
-            }
-        }.apply {
-            contentDescription = "切换收起或展开，长按拖动可调整大小"
-            setChromeIcon(this, R.drawable.ic_overlay_resize_up_left)
+        lockButton = chromeButton("") {
+            positionLocked = !positionLocked
+            prefs.edit().putBoolean(PREF_POSITION_LOCKED, positionLocked).apply()
+            updateLockControl()
         }
-        scaleButton = resizeButton
+        updateLockControl()
 
-        val rotateControl = chromeButton("") {
-            toggleOverlayOrientation()
-        }.apply {
-            contentDescription = "将整个悬浮窗旋转90度"
-            setChromeIcon(this, R.drawable.ic_screen_rotation)
-        }
-        rotateButton = rotateControl
-
-        val dragTouch = object : View.OnTouchListener {
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        dragArea.setOnTouchListener(object : View.OnTouchListener {
             var downRawX = 0f
             var downRawY = 0f
             var downX = 0
             var downY = 0
+            var moving = false
 
             override fun onTouch(view: View, event: MotionEvent): Boolean {
                 val lp = windowParams ?: return false
-                if (compact) {
-                    if (event.actionMasked == MotionEvent.ACTION_DOWN) revealCompactControls(false)
-                    if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) revealCompactControls()
-                }
+                if (positionLocked) return true
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
-                        downRawX = event.rawX
-                        downRawY = event.rawY
-                        downX = lp.x
-                        downY = lp.y
+                        downRawX = event.rawX; downRawY = event.rawY
+                        downX = lp.x; downY = lp.y
+                        moving = false
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - downRawX
+                        val dy = event.rawY - downRawY
+                        if (!moving && max(kotlin.math.abs(dx), kotlin.math.abs(dy)) <= touchSlop) return true
+                        moving = true
                         val safe = currentSafeDisplayBounds()
-                        val maxX = max(safe.left, safe.right - lp.width)
-                        val maxY = max(safe.top, safe.bottom - lp.height)
-                        lp.x = (downX + event.rawX - downRawX).toInt()
-                            .coerceIn(safe.left, maxX)
-                        lp.y = (downY + event.rawY - downRawY).toInt()
-                            .coerceIn(safe.top, maxY)
+                        lp.x = (downX + dx).roundToInt().coerceIn(safe.left, max(safe.left, safe.right - lp.width))
+                        lp.y = (downY + dy).roundToInt().coerceIn(safe.top, max(safe.top, safe.bottom - lp.height))
                         overlayRoot?.let { windowManager.updateViewLayout(it, lp) }
                         return true
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        saveOverlayGeometry(compact, lp, saveSize = false)
-                        return true
-                    }
-                }
-                return false
-            }
-        }
-        dragArea.setOnTouchListener(dragTouch)
-
-        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
-        resizeButton.setOnTouchListener(object : View.OnTouchListener {
-            var downRawX = 0f
-            var downRawY = 0f
-            var downX = 0
-            var downY = 0
-            var downWidth = 0
-            var downHeight = 0
-            var resizing = false
-            var movedBeforeLongPress = false
-            var pendingLongPress: Runnable? = null
-
-            fun cancelLongPress() {
-                pendingLongPress?.let(mainHandler::removeCallbacks)
-                pendingLongPress = null
-            }
-
-            fun saveSize(lp: WindowManager.LayoutParams) {
-                saveOverlayGeometry(compact, lp, saveSize = true)
-            }
-
-            override fun onTouch(view: View, event: MotionEvent): Boolean {
-                val lp = windowParams ?: return false
-                if (compact) revealCompactControls(event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL)
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        downRawX = event.rawX
-                        downRawY = event.rawY
-                        downX = lp.x
-                        downY = lp.y
-                        downWidth = lp.width
-                        downHeight = lp.height
-                        resizing = false
-                        movedBeforeLongPress = false
-                        pendingLongPress = Runnable {
-                            singleTap?.let(mainHandler::removeCallbacks)
-                            singleTap = null
-                            resizing = true
-                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                        }.also {
-                            mainHandler.postDelayed(it, ViewConfiguration.getLongPressTimeout().toLong())
-                        }
-                        return true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        val deltaX = event.rawX - downRawX
-                        val deltaY = event.rawY - downRawY
-                        if (!resizing && max(kotlin.math.abs(deltaX), kotlin.math.abs(deltaY)) > touchSlop.toFloat()) {
-                            movedBeforeLongPress = true
-                            cancelLongPress()
-                        }
-                        if (!resizing) return true
-                        val safe = currentSafeDisplayBounds()
-                        if (overlayRotated) {
-                            // The logical top/right resize corner becomes the physical
-                            // bottom/right corner after the whole canvas turns clockwise.
-                            val minimumPhysicalWidth = dp(compactMinimumHeightDp(fontScalePercent))
-                            val minimumPhysicalHeight = minimumOverlayWidth(safe.height())
-                            val maximumPhysicalWidth = max(minimumPhysicalWidth, safe.right - downX)
-                            val maximumPhysicalHeight = max(minimumPhysicalHeight, safe.bottom - downY)
-                            lp.width = (downWidth + deltaX).toInt()
-                                .coerceIn(minimumPhysicalWidth, maximumPhysicalWidth)
-                            lp.height = (downHeight + deltaY).toInt()
-                                .coerceIn(minimumPhysicalHeight, maximumPhysicalHeight)
-                            lp.x = downX
-                            lp.y = downY
-                        } else {
-                            val minimumWidth = minimumOverlayWidth(safe.width())
-                            val availableWidth = max(minimumWidth, safe.right - downX)
-                            lp.width = (downWidth + deltaX).toInt()
-                                .coerceIn(minimumWidth, availableWidth)
-                            val bottomEdge = downY + downHeight
-                            val minimumHeight = dp(compactMinimumHeightDp(fontScalePercent))
-                            val maximumHeight = max(minimumHeight, bottomEdge - safe.top)
-                            lp.height = (downHeight - deltaY).toInt()
-                                .coerceIn(minimumHeight, maximumHeight)
-                            lp.y = bottomEdge - lp.height
-                        }
-                        applyOverlayRotationLayout()
-                        overlayRoot?.let { windowManager.updateViewLayout(it, lp) }
-                        return true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        cancelLongPress()
-                        if (resizing) {
-                            val logicalSize = windowToLogicalSize(lp.width, lp.height, overlayRotated)
-                            val compactForSize = logicalSize.second <= dp(COMPACT_MAX_HEIGHT_DP)
-                            if (compactForSize != compact) {
-                                setCompactUi(compactForSize)
-                            }
-                            saveSize(lp)
-                        } else if (!movedBeforeLongPress) {
-                            view.performClick()
-                        }
-                        resizing = false
-                        return true
-                    }
-                    MotionEvent.ACTION_CANCEL -> {
-                        cancelLongPress()
-                        if (resizing) {
-                            val logicalSize = windowToLogicalSize(lp.width, lp.height, overlayRotated)
-                            val compactForSize = logicalSize.second <= dp(COMPACT_MAX_HEIGHT_DP)
-                            if (compactForSize != compact) {
-                                setCompactUi(compactForSize)
-                            }
-                            saveSize(lp)
-                        }
-                        resizing = false
+                        if (moving) saveOverlayGeometry(true, lp, saveSize = false)
+                        moving = false
                         return true
                     }
                 }
@@ -1011,7 +842,7 @@ class LyricsOverlayService : Service() {
         content.addView(webContainer, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
-        ))
+        ).apply { marginEnd = dp(96) })
 
         val player = WebView(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
@@ -1032,7 +863,7 @@ class LyricsOverlayService : Service() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     webReady = true
-                    applyFontScale(fontScalePercent, adjustCompactHeight = false)
+                    applyFontScale()
                     applyLyricColor()
                     applyLyricOffset()
                     applyTranslationMode()
@@ -1040,7 +871,7 @@ class LyricsOverlayService : Service() {
                         "window.LobstaOverlay && window.LobstaOverlay.setCompact($compact);",
                         null
                     )
-                    applyHorizontalWebLayout()
+                    applyCompactLayout()
                     applyBackgroundMode()
                     pendingSnapshot?.let { deliverToWeb(it) } ?: scheduleSnapshot()
                 }
@@ -1056,58 +887,10 @@ class LyricsOverlayService : Service() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
-        content.addView(chrome, FrameLayout.LayoutParams(
-            if (compact) dp(26) else ViewGroup.LayoutParams.WRAP_CONTENT,
-            if (compact) ViewGroup.LayoutParams.MATCH_PARENT else dp(28),
-            if (compact) Gravity.END or Gravity.CENTER_VERTICAL else Gravity.END or Gravity.BOTTOM
-        ))
-        updateControlLayout(compact)
+        content.addView(chrome, FrameLayout.LayoutParams(dp(96), dp(48), Gravity.END or Gravity.CENTER_VERTICAL))
+        updateControlLayout()
 
         windowManager.addView(root, params)
-    }
-
-    fun attachFullscreen(host: FrameLayout): Boolean {
-        if (!webReady) return false
-        val player = webView ?: return false
-        if (fullscreenHost != null) return false
-        overlayWebHost = player.parent as? ViewGroup
-        overlayWebHost?.removeView(player)
-        fullscreenHost = host
-        overlayRoot?.visibility = View.GONE
-        host.addView(player, FrameLayout.LayoutParams(-1, -1))
-        syncActiveVisualPreferences(false)
-        player.evaluateJavascript("window.LobstaOverlay.setCompact(false);", null)
-        applyFontScale(fontScalePercent, adjustCompactHeight = false)
-        applyLyricColor()
-        applyBackgroundMode()
-        updateFullscreenLayout()
-        return true
-    }
-
-    fun updateFullscreenLayout() {
-        val host = fullscreenHost ?: return
-        host.post {
-            webView?.evaluateJavascript("window.LobstaOverlay.setHorizontalLayout(${host.width > host.height});", null)
-        }
-    }
-
-    fun detachFullscreen(host: FrameLayout) {
-        if (fullscreenHost !== host) return
-        webView?.let { player ->
-            host.removeView(player)
-            overlayWebHost?.addView(player, FrameLayout.LayoutParams(-1, -1))
-            syncActiveVisualPreferences(compact)
-            player.evaluateJavascript("window.LobstaOverlay.setCompact($compact);", null)
-            applyFontScale(fontScalePercent, adjustCompactHeight = false)
-            applyLyricColor()
-            applyBackgroundMode()
-        }
-        fullscreenHost = null
-        overlayWebHost = null
-        applyHorizontalWebLayout()
-        overlayRoot?.visibility = View.VISIBLE
-        val size = currentDisplaySize()
-        if (size.first != lastDisplayWidth || size.second != lastDisplayHeight) adaptOverlayToDisplay()
     }
 
     private fun currentDisplaySize(): Pair<Int, Int> {
@@ -1185,11 +968,8 @@ class LyricsOverlayService : Service() {
         )
     }
 
-    private fun minimumOverlayWidth(screenWidth: Int = currentDisplaySize().first): Int {
-        val oneThirdScreen = screenWidth / 3
-        val requestedMinimum = oneThirdScreen.coerceIn(dp(112), dp(140))
-        return min(requestedMinimum, max(1, screenWidth))
-    }
+    private fun minimumOverlayWidth(screenWidth: Int = currentDisplaySize().first): Int =
+        min(dp(240), max(1, screenWidth))
 
     private fun fittedOverlaySize(
         desiredWidth: Int,
@@ -1198,43 +978,14 @@ class LyricsOverlayService : Service() {
         screenWidth: Int,
         screenHeight: Int
     ): Pair<Int, Int> {
-        // Safe display bounds already exclude system bars and cutouts. Allow users to
-        // align an overlay exactly to both horizontal edges without losing 8dp again
-        // when the size is re-fitted during a compact/expanded transition.
         val maxWidth = max(1, screenWidth)
         val minWidth = minimumOverlayWidth(screenWidth).coerceAtMost(maxWidth)
         val maxHeight = max(1, screenHeight - dp(DISPLAY_EDGE_MARGIN_DP))
-        val requestedMinHeight = if (isCompact) {
-            dp(compactMinimumHeightDp(fontScalePercent))
-        } else {
-            dp(COMPACT_MAX_HEIGHT_DP + 1)
-        }
-        val minHeight = min(requestedMinHeight, maxHeight)
-
-        var width = max(desiredWidth, minWidth)
-        var height = max(desiredHeight, minHeight)
-        if (!isCompact) {
-            val scale = minOf(
-                1f,
-                maxWidth / width.toFloat(),
-                maxHeight / height.toFloat()
-            )
-            width = (width * scale).roundToInt()
-            height = (height * scale).roundToInt()
-        }
-
-        width = width.coerceIn(minWidth, maxWidth)
-        val compactMaxHeight = min(dp(COMPACT_MAX_HEIGHT_DP), maxHeight)
-        height = if (isCompact) {
-            height.coerceIn(min(minHeight, compactMaxHeight), compactMaxHeight)
-        } else {
-            height.coerceIn(minHeight, maxHeight)
-        }
-        return width to height
+        return desiredWidth.coerceIn(minWidth, maxWidth) to
+            desiredHeight.coerceIn(min(dp(48), maxHeight), maxHeight)
     }
 
     private fun adaptOverlayToDisplay() {
-        if (fullscreenHost != null) return
         val root = overlayRoot ?: return
         val lp = windowParams ?: return
         val (screenWidth, screenHeight) = currentDisplaySize()
@@ -1245,13 +996,7 @@ class LyricsOverlayService : Service() {
         val centerY = (lp.y + lp.height / 2f) / previousHeight
         val currentLogicalSize = windowToLogicalSize(lp.width, lp.height, overlayRotated)
 
-        val desiredSize = if (compact) {
-            prefs.getInt(PREF_COMPACT_WIDTH, currentLogicalSize.first) to
-                prefs.getInt("compact_height_v3", currentLogicalSize.second)
-        } else {
-            prefs.getInt("width", currentLogicalSize.first) to
-                prefs.getInt("height", currentLogicalSize.second)
-        }
+        val desiredSize = prefs.getInt(PREF_COMPACT_WIDTH, currentLogicalSize.first) to desiredCompactHeight()
         val fittedLogicalSize = fittedLogicalOverlaySize(
             desiredSize.first,
             desiredSize.second,
@@ -1275,7 +1020,6 @@ class LyricsOverlayService : Service() {
     }
 
     private fun applyHorizontalWebLayout() {
-        if (fullscreenHost != null) return
         webView?.evaluateJavascript(
             "window.LobstaOverlay && window.LobstaOverlay.setHorizontalLayout($overlayRotated);",
             null
@@ -1289,7 +1033,9 @@ class LyricsOverlayService : Service() {
         includeFontPadding = false
         gravity = Gravity.CENTER
         setShadowLayer(dp(2).toFloat(), 0f, dp(1).toFloat(), Color.argb(190, 0, 0, 0))
+        isFocusable = true
         setOnClickListener { action() }
+        setPadding(dp(14), 0, dp(14), 0)
     }
 
     private fun setChromeIcon(button: TextView, drawableRes: Int) {
@@ -1297,7 +1043,8 @@ class LyricsOverlayService : Service() {
             setTint(Color.argb(225, 255, 255, 255))
         }
         button.text = ""
-        button.setCompoundDrawablesWithIntrinsicBounds(icon, null, null, null)
+        icon?.setBounds(0, 0, dp(20), dp(20))
+        button.setCompoundDrawables(icon, null, null, null)
     }
 
     private fun overlayBackground(isCompact: Boolean): GradientDrawable = GradientDrawable().apply {
@@ -1307,75 +1054,6 @@ class LyricsOverlayService : Service() {
         if (!isCompact) {
             setStroke(dp(1), Color.argb(45, 255, 255, 255))
         }
-    }
-
-    private fun toggleOverlayOrientation() {
-        val root = overlayRoot ?: return
-        val lp = windowParams ?: return
-        if (compact) return
-        val safe = currentSafeDisplayBounds()
-        val centerX = lp.x + lp.width / 2f
-        val centerY = lp.y + lp.height / 2f
-        val nextRotated = !overlayRotated
-        lp.x = (centerX - lp.width / 2f).roundToInt()
-            .coerceIn(safe.left, max(safe.left, safe.right - lp.width))
-        lp.y = (centerY - lp.height / 2f).roundToInt()
-            .coerceIn(safe.top, max(safe.top, safe.bottom - lp.height))
-        overlayRotated = nextRotated
-        val currentLogicalSize = windowToLogicalSize(lp.width, lp.height, overlayRotated)
-        prefs.edit()
-            .putBoolean(PREF_OVERLAY_ROTATED, overlayRotated)
-            .putInt("width", currentLogicalSize.first)
-            .putInt("height", currentLogicalSize.second)
-            .putInt("x", lp.x)
-            .putInt("y", lp.y)
-            .putInt(positionXPreferenceKey(false), lp.x)
-            .putInt(positionYPreferenceKey(false), lp.y)
-            .apply()
-        applyOverlayRotationLayout()
-        applyHorizontalWebLayout()
-        windowManager.updateViewLayout(root, lp)
-    }
-
-    private fun toggleCompact() {
-        val nextCompact = !compact
-        val previousFontScalePercent = fontScalePercent
-        val lp = windowParams ?: return
-        val safe = currentSafeDisplayBounds()
-        val centerX = lp.x + lp.width / 2f
-        val centerY = lp.y + lp.height / 2f
-        val currentLogicalSize = windowToLogicalSize(lp.width, lp.height, overlayRotated)
-        saveOverlayGeometry(compact, lp, saveSize = true)
-        val desiredSize = if (nextCompact) {
-            prefs.getInt(PREF_COMPACT_WIDTH, currentLogicalSize.first) to
-                prefs.getInt("compact_height_v3", dp(48))
-        } else {
-            prefs.getInt("width", currentLogicalSize.first) to prefs.getInt("height", dp(520))
-        }
-        syncActiveVisualPreferences(nextCompact)
-        val fittedLogicalSize = fittedLogicalOverlaySize(
-            desiredSize.first,
-            desiredSize.second,
-            isCompact = nextCompact,
-            rotated = overlayRotated,
-            safeBounds = safe
-        )
-        val fittedWindowSize = logicalToWindowSize(fittedLogicalSize, overlayRotated)
-        lp.width = fittedWindowSize.first
-        lp.height = fittedWindowSize.second
-        val targetXKey = positionXPreferenceKey(nextCompact)
-        val targetYKey = positionYPreferenceKey(nextCompact)
-        lp.x = (if (prefs.contains(targetXKey)) prefs.getInt(targetXKey, lp.x)
-            else (centerX - lp.width / 2f).roundToInt())
-            .coerceIn(safe.left, max(safe.left, safe.right - lp.width))
-        lp.y = (if (prefs.contains(targetYKey)) prefs.getInt(targetYKey, lp.y)
-            else (centerY - lp.height / 2f).roundToInt())
-            .coerceIn(safe.top, max(safe.top, safe.bottom - lp.height))
-        fontScalePercent = previousFontScalePercent
-        setCompactUi(nextCompact)
-        applyOverlayRotationLayout()
-        overlayRoot?.let { windowManager.updateViewLayout(it, lp) }
-        saveOverlayGeometry(nextCompact, lp, saveSize = true)
     }
 
     private fun positionXPreferenceKey(targetCompact: Boolean): String =
@@ -1408,36 +1086,13 @@ class LyricsOverlayService : Service() {
         editor.apply()
     }
 
-    private fun setCompactUi(value: Boolean) {
-        val previousFontScalePercent = fontScalePercent
-        if (compact != value) {
-            closeBlockedUntilElapsedMs = SystemClock.elapsedRealtime() + CLOSE_GUARD_AFTER_TOGGLE_MS
-        }
-        compact = value
-        syncActiveVisualPreferences(compact)
-        prefs.edit().putBoolean("compact", compact).apply()
-        overlayContent?.background = overlayBackground(compact)
-        updateControlLayout(compact)
-        webView?.evaluateJavascript(
-            "window.LobstaOverlay && window.LobstaOverlay.setCompact($compact);",
-            null
-        )
-        // The target geometry has already been restored before this UI switch.
-        // Re-basing compact height from the other mode's font scale can shave a
-        // few pixels off a two-line compact layout and incorrectly collapse it
-        // to one line. Only an explicit compact-font setting change may resize it.
-        applyFontScale(previousFontScalePercent, adjustCompactHeight = false)
-        applyLyricColor()
-        applyBackgroundMode()
-    }
-
     private fun syncActiveVisualPreferences(targetCompact: Boolean) {
         backgroundMode = if (targetCompact) compactBackgroundMode else expandedBackgroundMode
         fontScalePercent = if (targetCompact) compactFontScalePercent else expandedFontScalePercent
         lyricColor = if (targetCompact) compactLyricColor else expandedLyricColor
     }
 
-    private fun displayedVisualTargetIsCompact(): Boolean = fullscreenHost == null && compact
+    private fun displayedVisualTargetIsCompact(): Boolean = true
 
     private fun applyBackgroundMode() {
         val encodedMode = JSONObject.quote(backgroundMode)
@@ -1447,44 +1102,42 @@ class LyricsOverlayService : Service() {
         )
     }
 
-    private fun applyFontScale(previousPercent: Int, adjustCompactHeight: Boolean) {
+    private fun applyFontScale() {
         webView?.evaluateJavascript(
-            "window.LobstaOverlay && window.LobstaOverlay.setFontScale($fontScalePercent);",
-            null
+            "window.LobstaOverlay && window.LobstaOverlay.setFontScale($fontScalePercent);", null
         )
-        if (!adjustCompactHeight || !compact) return
+        resizeCompactWindow()
+    }
 
+    private fun contextLines(before: Boolean): Int = prefs.getInt(
+        if (before) PREF_CONTEXT_BEFORE else PREF_CONTEXT_AFTER, if (before) 0 else 1
+    ).coerceIn(0, 2)
+
+    private fun desiredCompactHeight(): Int {
+        val secondaryLines = if (compactHasLyrics) contextLines(true) + contextLines(false) +
+            (if (compactHasTranslation) 1 else 0) else 0
+        val scale = fontScalePercent / 100f
+        return dp(kotlin.math.ceil(12f + (34.5f + 26.45f * secondaryLines) * scale).toInt().coerceAtLeast(48))
+    }
+
+    private fun applyCompactLayout() {
+        webView?.evaluateJavascript(
+            "window.LobstaOverlay && window.LobstaOverlay.setContext(${contextLines(true)}, ${contextLines(false)});", null
+        )
+        resizeCompactWindow()
+    }
+
+    private fun resizeCompactWindow() {
+        val root = overlayRoot ?: return
         val lp = windowParams ?: return
-        val logicalSize = windowToLogicalSize(lp.width, lp.height, overlayRotated)
-        val previousMinimum = dp(compactMinimumHeightDp(previousPercent))
-        val nextMinimum = dp(compactMinimumHeightDp(fontScalePercent))
-        val wasAtMinimum = logicalSize.second <= previousMinimum + dp(2)
-        val nextLogicalHeight = if (wasAtMinimum) {
-            nextMinimum
-        } else {
-            max(logicalSize.second, nextMinimum)
-        }
-        if (nextLogicalHeight == logicalSize.second) return
-
         val safe = currentSafeDisplayBounds()
-        val fittedLogicalSize = fittedLogicalOverlaySize(
-            logicalSize.first,
-            nextLogicalHeight.coerceAtMost(dp(COMPACT_MAX_HEIGHT_DP)),
-            isCompact = true,
-            rotated = overlayRotated,
-            safeBounds = safe
-        )
-        val fittedWindowSize = logicalToWindowSize(fittedLogicalSize, overlayRotated)
-        lp.width = fittedWindowSize.first
-        lp.height = fittedWindowSize.second
-        lp.x = lp.x.coerceIn(safe.left, max(safe.left, safe.right - lp.width))
+        val height = desiredCompactHeight().coerceAtMost(max(1, safe.height() - dp(DISPLAY_EDGE_MARGIN_DP)))
+        if (lp.height == height) return
+        lp.height = height
         lp.y = lp.y.coerceIn(safe.top, max(safe.top, safe.bottom - lp.height))
         applyOverlayRotationLayout()
-        overlayRoot?.let { windowManager.updateViewLayout(it, lp) }
-        prefs.edit()
-            .putInt(PREF_COMPACT_WIDTH, fittedLogicalSize.first)
-            .putInt("compact_height_v3", fittedLogicalSize.second)
-            .apply()
+        if (root.isAttachedToWindow) windowManager.updateViewLayout(root, lp)
+        saveOverlayGeometry(true, lp, saveSize = true)
     }
 
     private fun applyLyricColor() {
@@ -1554,8 +1207,7 @@ class LyricsOverlayService : Service() {
 
     fun currentLyricOffsetMs(): Int = lyricOffsetMs
 
-    /** 悬浮窗当前是否显示为收起(小窗)。全屏态视为展开。给设置页对齐用。 */
-    fun isDisplayingCompact(): Boolean = fullscreenHost == null && compact
+    fun isPositionLocked(): Boolean = positionLocked
 
     private fun applyTranslationMode() {
         val encoded = JSONObject.quote(translationMode)
@@ -1587,89 +1239,25 @@ class LyricsOverlayService : Service() {
     private fun normalizedFontScale(value: Int): Int =
         value.coerceIn(FONT_SCALE_MIN_PERCENT, FONT_SCALE_MAX_PERCENT)
 
-    private fun updateControlLayout(isCompact: Boolean) {
+    private fun updateLockControl() {
+        lockButton?.let { button ->
+            button.contentDescription = if (positionLocked) "位置已锁定，点击解锁" else "锁定悬浮窗位置"
+            button.isSelected = positionLocked
+            setChromeIcon(button, if (positionLocked) R.drawable.ic_overlay_locked else R.drawable.ic_overlay_unlocked)
+        }
+    }
+
+    private fun updateControlLayout() {
         val chrome = chromeBar ?: return
-        revealCompactControls()
-        chrome.orientation = if (isCompact) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        chrome.orientation = LinearLayout.HORIZONTAL
         chrome.gravity = Gravity.CENTER
-        scaleButton?.let {
-            setChromeIcon(
-                it,
-                if (isCompact) {
-                    R.drawable.ic_overlay_resize_down_left
-                } else {
-                    R.drawable.ic_overlay_resize_up_left
-                }
-            )
-        }
-
         chrome.removeAllViews()
-        if (isCompact) {
-            scaleButton?.let(chrome::addView)
-            closeButton?.let(chrome::addView)
-        } else {
-            rotateButton?.let(chrome::addView)
-            chrome.addView(
-                View(this),
-                LinearLayout.LayoutParams(dp(6), ViewGroup.LayoutParams.MATCH_PARENT)
-            )
-            scaleButton?.let(chrome::addView)
-            chrome.addView(
-                View(this),
-                LinearLayout.LayoutParams(dp(6), ViewGroup.LayoutParams.MATCH_PARENT)
-            )
-            closeButton?.let(chrome::addView)
+        listOfNotNull(lockButton, closeButton).forEach {
+            chrome.addView(it, LinearLayout.LayoutParams(dp(48), dp(48)))
         }
-
-        val params = (chrome.layoutParams as? FrameLayout.LayoutParams)
-            ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(28))
-        params.width = if (isCompact) dp(26) else ViewGroup.LayoutParams.WRAP_CONTENT
-        params.height = if (isCompact) ViewGroup.LayoutParams.MATCH_PARENT else dp(32)
-        params.gravity = if (isCompact) {
-            Gravity.END or Gravity.CENTER_VERTICAL
-        } else {
-            Gravity.END or Gravity.TOP
-        }
-        params.setMargins(0, if (isCompact) 0 else dp(12), if (isCompact) 0 else dp(17), 0)
-        chrome.layoutParams = params
-
-        if (isCompact) {
-            closeButton?.translationX = dp(3).toFloat()
-            scaleButton?.translationX = dp(3).toFloat()
-            closeButton?.layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-            scaleButton?.layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        } else {
-            rotateButton?.translationX = 0f
-            closeButton?.translationX = 0f
-            scaleButton?.translationX = 0f
-            rotateButton?.layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
-            closeButton?.layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
-            scaleButton?.layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
-        }
-        chrome.requestLayout()
-
-        dragTouchArea?.let { area ->
-            val areaParams = (area.layoutParams as? FrameLayout.LayoutParams)
-                ?: FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-            areaParams.width = ViewGroup.LayoutParams.MATCH_PARENT
-            // Keep the metadata header draggable, but stop before the chips row so
-            // the WebView can receive taps on the interactive lyrics-source chip.
-            areaParams.height = if (isCompact) ViewGroup.LayoutParams.MATCH_PARENT else dp(78)
-            areaParams.gravity = Gravity.TOP
-            area.layoutParams = areaParams
-            area.requestLayout()
-        }
+        dragTouchArea?.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ).apply { marginEnd = dp(96) }
     }
 
     private fun startMediaMonitor() {
@@ -1948,6 +1536,10 @@ class LyricsOverlayService : Service() {
         const val ACTION_SET_LYRIC_OFFSET = "com.luoh.music.lrc.action.SET_LYRIC_OFFSET"
         const val ACTION_CLEAR_LYRIC_OFFSET_MEMORIES = "com.luoh.music.lrc.action.CLEAR_LYRIC_OFFSET_MEMORIES"
         const val ACTION_DELETE_LYRIC_OFFSET_MEMORY = "com.luoh.music.lrc.action.DELETE_LYRIC_OFFSET_MEMORY"
+        const val ACTION_SET_CONTEXT = "com.luoh.music.lrc.action.SET_CONTEXT"
+        const val PREF_CONTEXT_BEFORE = "context_before"
+        const val PREF_CONTEXT_AFTER = "context_after"
+        private const val PREF_POSITION_LOCKED = "position_locked"
         const val ACTION_SET_TRANSLATION_MODE = "com.luoh.music.lrc.action.SET_TRANSLATION_MODE"
         const val ACTION_REFRESH_MATCHES = "com.luoh.music.lrc.action.REFRESH_MATCHES"
         const val ACTION_RELOAD_CUSTOM_LYRICS = "com.luoh.music.lrc.action.RELOAD_CUSTOM_LYRICS"
@@ -2080,9 +1672,7 @@ class LyricsOverlayService : Service() {
         }
         private const val LOG_TAG = "DesktopLyrics"
         private const val CHANNEL_ID = "lobsta_lyrics_overlay"
-        private const val COMPACT_MAX_HEIGHT_DP = 130
         private const val DISPLAY_EDGE_MARGIN_DP = 8
-        private const val CLOSE_GUARD_AFTER_TOGGLE_MS = 650L
         private const val NOTIFICATION_ID = 4202
 
         @Volatile

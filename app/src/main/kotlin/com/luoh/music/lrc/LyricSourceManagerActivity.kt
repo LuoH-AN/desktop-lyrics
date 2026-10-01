@@ -14,6 +14,7 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.graphics.Typeface
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -71,15 +72,6 @@ class LyricSourceManagerActivity : AppCompatActivity() {
         val values = entries()
         val entry = values.find { it.optString("key") == selected }
         if (entry == null) {
-            content.addView(button("清除所有歌词源缓存") {
-                save(emptyList())
-                // 同时清空主页的本地歌词缓存，避免删了记忆主页还显示旧缓存
-                getSharedPreferences("home_lyric_cache_v1", Context.MODE_PRIVATE).edit().clear().apply()
-                selected = null; message = "已清除所有匹配记忆和历史版本，恢复自动匹配"; render()
-            }.apply {
-                isEnabled = values.isNotEmpty() && !busy
-            })
-            content.addView(label("仅清除这里的匹配记忆和历史版本，不影响翻译语言包与偏移设置。", 12f))
             val input = EditText(this).apply {
                 hint = "搜索已记录的歌名或歌手"; textSize = 14f
                 setTextColor(col(R.color.text_primary)); setHintTextColor(col(R.color.text_tertiary))
@@ -89,6 +81,11 @@ class LyricSourceManagerActivity : AppCompatActivity() {
             content.addView(input, LinearLayout.LayoutParams(-1,dp(50)).apply { topMargin = dp(12) })
             val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             content.addView(list)
+            content.addView(button("清除匹配记录与缓存…") { confirmClearAll() }.apply {
+                isEnabled = !busy && (values.isNotEmpty() ||
+                    getSharedPreferences("home_lyric_cache_v1", Context.MODE_PRIVATE).all.isNotEmpty())
+            })
+            content.addView(label("包括手动选定的版本和历史记录；自定义歌词、翻译语言包与同步设置不受影响。", 12f))
             fun fillSongs() {
                 list.removeAllViews()
                 val groups = values.asReversed().groupBy {
@@ -130,8 +127,15 @@ class LyricSourceManagerActivity : AppCompatActivity() {
             content.addView(button("恢复最初的歌词") { update(key) { it.put("candidate", original).put("needsReview", false) }; message = "已恢复最初的歌词"; render() })
         }
         content.addView(button("删除记忆 / 恢复自动匹配") {
-            save(entries().filter { it.optString("key") != key }); selected = null; message = "已删除，下次搜索使用自动匹配"; render()
-        })
+            AlertDialog.Builder(this)
+                .setTitle("删除这首歌的来源记忆？")
+                .setMessage("将删除《${entry.optString("title")}》在 ${entry.optString("source")} 的选择及历史版本，下次搜索恢复自动匹配。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("删除记忆") { _, _ ->
+                    save(entries().filter { it.optString("key") != key })
+                    selected = null; message = "已删除，下次搜索使用自动匹配"; render()
+                }.show()
+        }.apply { isEnabled = !busy })
         val history = entry.optJSONArray("history") ?: JSONArray().put(entry.optJSONObject("candidate"))
         for (i in 0 until history.length()) {
             val candidate = history.optJSONObject(i) ?: continue
@@ -157,9 +161,25 @@ class LyricSourceManagerActivity : AppCompatActivity() {
             })
         }
     }
+    private fun confirmClearAll() {
+        if (busy) return
+        val count = entries().map { it.optString("title") + "\u0000" + it.optString("artist") }.distinct().size
+        AlertDialog.Builder(this)
+            .setTitle("清除匹配记录与缓存？")
+            .setMessage("将清除 $count 首歌曲的匹配记录（包括手动选定的版本与历史版本），以及主页缓存的歌词。此操作无法撤销。\n\n自定义歌词、翻译语言包和同步设置都会保留。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("确认清除") { _, _ ->
+                save(emptyList())
+                getSharedPreferences("home_lyric_cache_v1", Context.MODE_PRIVATE).edit().clear().apply()
+                selected = null
+                message = "已清除匹配记录与缓存，下次搜索恢复自动匹配"
+                render()
+            }.show()
+    }
+
     private fun search(entry: JSONObject) {
         if (busy) return
-        if (entry.optString("title").isBlank()) { message = "旧版记录缺少歌曲信息，请播放这首歌后再双击一次以补齐。"; render(); return }
+        if (entry.optString("title").isBlank()) { message = "旧版记录缺少歌曲信息，请先播放这首歌，获取歌词后再打开此页。"; render(); return }
         busy = true; message = ""; render()
         val key = entry.optString("key")
         val history = entry.optJSONArray("history") ?: JSONArray().put(entry.optJSONObject("candidate"))

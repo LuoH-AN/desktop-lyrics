@@ -257,7 +257,7 @@
       mask-image:linear-gradient(to bottom,transparent,#000 4%,#000 96%,transparent);
     }
     .compact-line {
-      position:absolute; left:0; right:0; top:0; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:stretch; padding:0 4px 0 14px;
+      position:absolute; left:0; right:0; top:0; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:stretch; padding:6px 8px 6px 12px;
       overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
       color:rgb(var(--lyric-rgb)); font-size:var(--compact-font-size); line-height:1.15; font-weight:840; letter-spacing:-.035em;
       text-shadow:none;
@@ -268,7 +268,7 @@
     .compact-line.outgoing { transform:translate3d(0,-42%,0); opacity:0; }
     .compact-line.no-transition { transition:none; }
     .compact-line-text { display:block; width:100%; min-width:0; overflow:hidden; white-space:nowrap; }
-    .compact-next-line { display:none; width:100%; min-width:0; overflow:hidden; white-space:nowrap; color:rgba(var(--lyric-rgb),.52); font-size:var(--compact-next-size); line-height:1.15; font-weight:680; }
+    .compact-next-line,.compact-context-line { display:block; width:100%; min-width:0; overflow:hidden; white-space:nowrap; color:rgba(var(--lyric-rgb),.72); font-size:var(--compact-next-size); line-height:1.15; font-weight:680; }
     .compact-scroll-text { display:inline-block; min-width:100%; will-change:transform; }
     .compact-word {
       color:transparent; background:linear-gradient(90deg,rgb(var(--lyric-rgb)) 0 var(--word-fill,0%),rgba(var(--lyric-rgb),.38) var(--word-fill,0%) 100%);
@@ -282,8 +282,14 @@
       from { margin-left:0; }
       to { margin-left:var(--compact-shift,0px); }
     }
-    body.compact.compact-two .compact-line { padding-top:2px; padding-bottom:2px; }
-    body.compact.compact-two .compact-next-line { display:block; }
+    .compact-context-line { text-overflow:ellipsis; flex-shrink:0; }
+    .compact-line-text,.compact-next-line { flex-shrink:0; }
+    body.compact #waiting { padding:8px; }
+    body.compact .waiting-title { font-size:14px; }
+    body.compact .waiting-copy { display:none; }
+    @media (prefers-reduced-motion:reduce) {
+      .compact-line { transition:none; }
+    }
     .footer {
       display:grid; grid-template-columns:minmax(30px,auto) minmax(0,1fr) minmax(30px,auto);
       align-items:center; column-gap:8px; padding:0 1px;
@@ -310,7 +316,7 @@
     body.background-transparent { background:transparent; }
     body.background-transparent .lyrics-viewport::before,
     body.background-transparent .lyrics-viewport::after { display:none; }
-    body.compact #app { padding:0 14px 0 0; }
+    body.compact #app { padding:0; }
     /* 小窗(收起)态：surface 无圆角撑满，背景跟随三档设定 */
     body.compact.background-transparent .surface { background:transparent; }
     body.compact.background-low .surface,
@@ -369,7 +375,7 @@
     }
   </style>
 </head>
-<body class="background-transparent">
+<body class="background-transparent compact">
   <canvas id="fluid"></canvas>
   <div id="low-fluid" aria-hidden="true">
     <div class="low-field low-field-a active">
@@ -674,12 +680,9 @@
       playback.active = -1;
       if (!playback.lyrics.length) {
         ui.lyrics.classList.remove('plain-mode','plain-scrolling');
-        // 无歌词时，若可用则附一个“添加 LRC 歌词”按钮，让用户直接去指定自定义歌词
-        const canCustom = offerCustom && window.LobstaNativeLyrics && window.LobstaNativeLyrics.editCustomLyrics;
-        ui.lyrics.innerHTML = '<div class="line empty">' + escapeHtml(message || '暂无歌词') +
-          (canCustom ? '<span class="custom-lyrics-action">添加 LRC 歌词</span>' : '') + '</div>';
+        ui.lyrics.innerHTML = '<div class="line empty">' + escapeHtml(message || '找不到歌词') + '</div>';
         ui.lyrics.style.transform = 'translateY(0)';
-        setCompactLyric(message || '暂无歌词', false);
+        setCompactLyric(message || '找不到歌词', false);
         requestAnimationFrame(()=>requestAnimationFrame(()=>{
           if(relayoutEpoch!==lyricsRelayoutEpoch)return;
           lyricsTrackingSuspended=false;
@@ -698,6 +701,28 @@
         lyricsTrackingSuspended=false;
         if(!manualLyricsScroll)ui.lyrics.classList.remove('manual-dragging');
       }));
+    }
+
+    let contextBefore = 0;
+    let contextAfter = 1;
+    let compactContentState = '';
+
+    function compactContextFor(lines, index, before, after) {
+      if(index < 0 || index >= lines.length) return {before:[], after:[]};
+      return {
+        before:lines.slice(Math.max(0,index-before),index).map(linePrimaryText),
+        after:lines.slice(index+1,index+1+after).map(linePrimaryText)
+      };
+    }
+
+    function reportCompactContentState(hasLyrics, hasTranslation) {
+      const state=hasLyrics+':'+hasTranslation;
+      if(state===compactContentState)return;
+      compactContentState=state;
+      try {
+        if(window.LobstaNativeLyrics && window.LobstaNativeLyrics.setCompactContentState)
+          window.LobstaNativeLyrics.setCompactContentState(hasLyrics,hasTranslation);
+      } catch(_) {}
     }
 
     let compactLineKey = '';
@@ -775,12 +800,14 @@
       });
     }
 
-    function setCompactLyric(text, animate, followingText, currentTimeBudget, timedLine, secondaryIsTranslation) {
-      const value = String(text || '暂无歌词');
-      const following = String(followingText || '').trim();
+    function setCompactLyric(text, animate, followingText, currentTimeBudget, timedLine, secondaryIsTranslation, lineIndex = playback.active) {
+      const value = String(text || '找不到歌词');
+      const following = secondaryIsTranslation ? String(followingText || '').trim() : '';
+      const context = compactContextFor(playback.lyrics, lineIndex, contextBefore, contextAfter);
+      reportCompactContentState(playback.lyrics.length > 0, !!following);
       const timingKey=timedLine&&Array.isArray(timedLine.words)&&timedLine.words.length?String(timedLine.t):'';
       const key = value + '\u0000' + following + '\u0000' + timingKey +
-        '\u0000' + (secondaryIsTranslation?'translation':'candidate');
+        '\u0000' + (secondaryIsTranslation?'translation':'candidate') + JSON.stringify(context);
       if (key === compactLineKey && ui.compactLyric.children.length) {
         const current = ui.compactLyric.querySelector('.compact-line.current');
         const currentViewport = current && current.querySelector('.compact-line-text');
@@ -796,6 +823,13 @@
       const previous = ui.compactLyric.querySelector('.compact-line.current');
       const next = document.createElement('div');
       next.className = 'compact-line' + (animate && previous ? '' : ' current no-transition');
+      const appendContext = value => {
+        const row=document.createElement('span');
+        row.className='compact-context-line';
+        row.textContent=value;
+        next.appendChild(row);
+      };
+      context.before.forEach(appendContext);
       next.appendChild(compactTextNode('compact-line-text', value, .75, currentTimeBudget, timedLine));
       if (following) {
         const secondary=compactTextNode(
@@ -807,6 +841,7 @@
         if(secondaryIsTranslation)secondary.dataset.translation='1';
         next.appendChild(secondary);
       }
+      context.after.forEach(appendContext);
 
       if (!animate || !previous) {
         ui.compactLyric.replaceChildren(next);
@@ -908,7 +943,8 @@
         hasTranslation?line.translation:(playback.lyrics[index+1]?linePrimaryText(playback.lyrics[index+1]):''),
         lineBudget,
         null,
-        hasTranslation
+        hasTranslation,
+        index
       );
       maybePrefetchSupplement();
     }
@@ -1124,6 +1160,7 @@
       if (active) {
         if(lines[index].plain){
           updatePlainLyricsScroll(force);
+          return;
         }else{
           ui.lyrics.classList.remove('plain-scrolling');
           const target = lyricFocusY() - active.offsetTop - active.offsetHeight * .5;
@@ -1351,10 +1388,10 @@
         if (isUsableLyricPayload(data.lyrics)) {
           saveLyrics(key,data);
           applyResolved(data,key,requestId);
-        } else if (!cached) renderLyrics([], '暂未匹配到歌词', true);
+        } else if (!cached) renderLyrics([], '找不到歌词', true);
       } catch (error) {
         if (error && error.name === 'AbortError') return;
-        if (!cached && key === playback.key) renderLyrics([], '歌词网络暂不可用', true);
+        if (!cached && key === playback.key) renderLyrics([], '找不到歌词', true);
       }
     }
 
@@ -1373,7 +1410,7 @@
         saveLyrics(playback.key, data);
         applyResolved(data, playback.key, requestId);
       } else if (!cachedLyrics(playback.key)) {
-        renderLyrics([], '暂未匹配到歌词', true);
+        renderLyrics([], '找不到歌词', true);
       }
     }
 
@@ -1444,7 +1481,7 @@
     }
 
     function applyCandidate(index) {
-      if(!playback.candidates.length){renderLyrics([],'暂未匹配到歌词');return;}
+      if(!playback.candidates.length){renderLyrics([],'找不到歌词');return;}
       const normalized=((Number(index)||0)%playback.candidates.length+playback.candidates.length)%playback.candidates.length;
       playback.candidateIndex=normalized;
       const data=playback.candidates[normalized];
@@ -1462,7 +1499,7 @@
       const plainMode=!wordTimed.length&&!lineTimed.length;
       const base=wordTimed.length?wordTimed:(lineTimed.length?lineTimed:plainLyrics(data.lyrics));
       ui.lyrics.classList.toggle('plain-mode',plainMode);
-      renderLyrics(attachTranslations(base,data.translatedLyrics),data.lyrics?'':'暂未匹配到歌词');
+      renderLyrics(attachTranslations(base,data.translatedLyrics),data.lyrics?'':'找不到歌词');
       if((!playback.durationMs||playback.durationMs<1000)&&Number(data.duration)>0)playback.durationMs=Number(data.duration);
       if(data.cover)setCover(data.cover,false);
       const capabilities=(wordTimed.length?' · 逐字':'')+(plainMode?' · 无时间轴':'')+(currentHasOfficialTranslation?' · 译':'');
@@ -1959,9 +1996,7 @@
       }, 180);
     }
     function updateCompactLayout() {
-      const twoLineMinimum=Math.ceil(7+(30*1.15+23*1.15)*lyricFontScale);
-      const twoLines = document.body.classList.contains('compact') && innerHeight >= twoLineMinimum;
-      document.body.classList.toggle('compact-two', twoLines);
+      document.body.classList.add('compact');
     }
 
     function setFontScale(percent) {
@@ -2015,15 +2050,17 @@
         translationMode=['original','bilingual','translated'].includes(value)?value:'bilingual';
         if(playback.candidates.length)applyCandidate(preferredCandidateIndex());
       },
-      setHorizontalLayout(value) {
-        document.body.classList.toggle('horizontal-layout', !!value);
-        recenterAfterLayout();
+      setContext(before, after) {
+        contextBefore=Math.max(0,Math.min(2,Math.round(Number(before)||0)));
+        contextAfter=Math.max(0,Math.min(2,Math.round(Number(after)||0)));
+        compactLineKey='';
+        updateActiveLine(lyricPosition(),true);
       },
-      setCompact(value) {
-        const nextCompact = !!value;
-        if(nextCompact)resumeRealtimeLyrics(false);
-        document.body.classList.toggle('compact', nextCompact);
-        updateCompactLayout();
+      setHorizontalLayout() {
+        document.body.classList.remove('horizontal-layout');
+      },
+      setCompact() {
+        document.body.classList.add('compact');
         recenterAfterLayout();
       },
       setBackgroundMode(value) {

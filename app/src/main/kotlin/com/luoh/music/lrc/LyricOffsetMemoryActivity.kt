@@ -16,7 +16,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
-import java.util.Locale
+import androidx.appcompat.app.AlertDialog
 
 class LyricOffsetMemoryActivity : AppCompatActivity() {
     private val prefs by lazy {
@@ -58,14 +58,14 @@ class LyricOffsetMemoryActivity : AppCompatActivity() {
     private fun render() {
         content.removeAllViews()
         content.addView(TextView(this).apply {
-            text = "‹  偏移记忆"
+            text = "‹  同步记忆"
             textSize = 21f
             setTextColor(col(R.color.text_primary))
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), dp(8), 0, dp(10))
             setOnClickListener { finish() }
         })
-        content.addView(text("每首歌、每个歌词源独立保存。删除后再次播放会恢复为 +0.0s。", 12f).apply {
+        content.addView(text("每首歌、每个歌词源独立保存。删除后恢复原始同步时间。", 12f).apply {
             setTextColor(col(R.color.text_tertiary))
             setPadding(dp(2), 0, 0, dp(4))
         })
@@ -74,7 +74,7 @@ class LyricOffsetMemoryActivity : AppCompatActivity() {
         if (entries.isEmpty()) {
             content.addView(card().apply {
                 gravity = Gravity.CENTER
-                addView(text("还没有自定义偏移记忆", 15f).apply {
+                addView(text("还没有保存的同步调整", 15f).apply {
                     gravity = Gravity.CENTER
                     setTextColor(col(R.color.text_secondary))
                 })
@@ -82,7 +82,7 @@ class LyricOffsetMemoryActivity : AppCompatActivity() {
             return
         }
 
-        content.addView(button("重置全部偏移记忆") { showClearDialog() })
+        content.addView(button("重置全部同步记忆") { showClearDialog() })
         entries.forEach { entry ->
             val panel = card()
             panel.addView(text(entry.title.ifBlank { "未知歌曲" }, 17f).apply {
@@ -99,11 +99,18 @@ class LyricOffsetMemoryActivity : AppCompatActivity() {
             detail.addView(text(entry.source.ifBlank { "歌词源" }, 12f).apply {
                 setTextColor(col(R.color.text_secondary))
             }, LinearLayout.LayoutParams(0, -2, 1f))
-            detail.addView(text(formatOffset(entry.offsetMs), 14f).apply {
+            detail.addView(text(LyricSyncText.format(entry.offsetMs), 14f).apply {
                 setTextColor(col(R.color.text_primary))
             })
             panel.addView(detail)
-            panel.addView(button("删除这条记忆") { delete(entry) })
+            panel.addView(button("删除这条记忆") {
+                AlertDialog.Builder(this)
+                    .setTitle("删除这条同步记忆？")
+                    .setMessage("《${entry.title}》在 ${entry.source} 的歌词将恢复原始同步时间。")
+                    .setNegativeButton("取消", null)
+                    .setPositiveButton("删除记忆") { _, _ -> delete(entry) }
+                    .show()
+            })
             content.addView(panel)
         }
     }
@@ -165,8 +172,8 @@ class LyricOffsetMemoryActivity : AppCompatActivity() {
     private fun showClearDialog() {
         val dialog = Dialog(this)
         val panel = card().apply {
-            addView(text("重置全部偏移？", 19f).apply { setTextColor(col(R.color.text_primary)) })
-            addView(text("所有歌曲和歌词源都会恢复为 +0.0s。", 12f).apply {
+            addView(text("重置全部同步调整？", 19f).apply { setTextColor(col(R.color.text_primary)) })
+            addView(text("所有歌曲和歌词源都会恢复原始同步时间，此操作无法撤销。", 12f).apply {
                 setTextColor(col(R.color.text_secondary)); setPadding(0, 4, 0, 8)
             })
             addView(button("确认重置") { dialog.dismiss(); clearAll() }.apply {
@@ -206,7 +213,7 @@ class LyricOffsetMemoryActivity : AppCompatActivity() {
         setTextColor(col(R.color.text_primary))
         setBackgroundResource(R.drawable.bg_ui_pill)
         stateListAnimator = null
-        layoutParams = LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) }
+        layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) }
         setOnClickListener { action() }
         setOnTouchListener { view, event ->
             when (event.actionMasked) {
@@ -217,9 +224,6 @@ class LyricOffsetMemoryActivity : AppCompatActivity() {
             false
         }
     }
-
-    private fun formatOffset(value: Int): String =
-        String.format(Locale.ROOT, "%+.1fs", value / 1000f)
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }

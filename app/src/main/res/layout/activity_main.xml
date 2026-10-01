@@ -5,10 +5,47 @@
     android:layout_height="match_parent"
     android:background="@color/app_bg">
 
-    <WebView
-        android:id="@+id/lyric_web"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:minHeight="56dp"
+            android:paddingStart="22dp"
+            android:paddingEnd="14dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="桌面歌词"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp" />
+            <androidx.appcompat.widget.SwitchCompat
+                android:id="@+id/main_overlay_toggle"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:contentDescription="开启或关闭桌面歌词悬浮窗" />
+            <TextView
+                android:id="@+id/main_settings"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginStart="12dp"
+                android:paddingHorizontal="8dp"
+                android:gravity="center"
+                android:background="?android:attr/selectableItemBackground"
+                android:text="设置"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp" />
+        </LinearLayout>
+        <WebView
+            android:id="@+id/lyric_web"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+    </LinearLayout>
 
     <!-- 权限/开启引导浮层 -->
     <LinearLayout

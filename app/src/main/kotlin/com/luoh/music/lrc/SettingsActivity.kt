@@ -3,6 +3,9 @@ package com.luoh.music.lrc
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -11,13 +14,14 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
+import android.util.TypedValue
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -38,19 +42,34 @@ class SettingsActivity : AppCompatActivity() {
 
     private lateinit var listenerState: TextView
     private lateinit var overlayState: TextView
-    private lateinit var overlayToggleState: TextView
+    private lateinit var overlayToggle: SwitchCompat
+    private var updatingOverlayToggle = false
+    private val overlayStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) = updatePermissionStates()
+    }
     private lateinit var themeFollow: TextView
     private lateinit var themeLight: TextView
     private lateinit var themeDark: TextView
-    private lateinit var settingsTargetExpanded: TextView
-    private lateinit var settingsTargetCompact: TextView
     private lateinit var backgroundModeTransparent: TextView
     private lateinit var backgroundModeLow: TextView
     private lateinit var backgroundModeHigh: TextView
     private lateinit var seekFontSize: SeekBar
     private lateinit var fontSizeValue: TextView
-    private lateinit var seekLyricOffset: SeekBar
     private lateinit var lyricOffsetValue: TextView
+    private lateinit var lyricOffsetScope: TextView
+    private lateinit var offsetEarlier: Button
+    private lateinit var offsetLater: Button
+    private lateinit var offsetReset: Button
+    private lateinit var overlayPreview: LinearLayout
+    private var displayedOffsetMs = 0
+    private val offsetPreferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == LyricsOverlayService.PREF_LYRIC_OFFSET_MS ||
+            key == LyricsOverlayService.PREF_ACTIVE_LYRIC_IDENTITY ||
+            key == LyricsOverlayService.PREF_ACTIVE_LYRIC_SOURCE ||
+            key == LyricsOverlayService.PREF_LYRIC_OFFSET_INDEX) {
+            updateLyricOffsetUi()
+        }
+    }
     private lateinit var lyricColorWhite: TextView
     private lateinit var lyricColorBlue: TextView
     private lateinit var lyricColorBlack: TextView
@@ -60,15 +79,6 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var translationBilingual: TextView
     private lateinit var translationTranslated: TextView
     private lateinit var versionValue: TextView
-
-    private var settingsTargetIsCompact = false
-
-    /** 悬浮窗当前实际显示的是收起(小窗)还是展开。设置页默认对齐它，
-     *  避免"改了半天改的是另一套(展开/收起)，当前看的窗根本不刷新"。 */
-    private fun currentOverlayIsCompact(): Boolean =
-        LyricsOverlayService.instance?.let {
-            LyricsOverlayService.isRunning && it.isDisplayingCompact()
-        } ?: overlayPrefs.getBoolean("compact", false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,19 +95,21 @@ class SettingsActivity : AppCompatActivity() {
 
         listenerState = findViewById(R.id.listener_permission_state)
         overlayState = findViewById(R.id.overlay_permission_state)
-        overlayToggleState = findViewById(R.id.overlay_toggle_state)
+        overlayToggle = findViewById(R.id.overlay_toggle)
         themeFollow = findViewById(R.id.theme_follow)
         themeLight = findViewById(R.id.theme_light)
         themeDark = findViewById(R.id.theme_dark)
-        settingsTargetExpanded = findViewById(R.id.settings_target_expanded)
-        settingsTargetCompact = findViewById(R.id.settings_target_compact)
         backgroundModeTransparent = findViewById(R.id.background_mode_transparent)
         backgroundModeLow = findViewById(R.id.background_mode_low)
         backgroundModeHigh = findViewById(R.id.background_mode_high)
         seekFontSize = findViewById(R.id.seek_font_size)
         fontSizeValue = findViewById(R.id.font_size_value)
-        seekLyricOffset = findViewById(R.id.seek_lyric_offset)
         lyricOffsetValue = findViewById(R.id.lyric_offset_value)
+        lyricOffsetScope = findViewById(R.id.lyric_offset_scope)
+        offsetEarlier = findViewById(R.id.offset_earlier)
+        offsetLater = findViewById(R.id.offset_later)
+        offsetReset = findViewById(R.id.offset_reset)
+        overlayPreview = findViewById(R.id.overlay_preview)
         lyricColorWhite = findViewById(R.id.lyric_color_white)
         lyricColorBlue = findViewById(R.id.lyric_color_blue)
         lyricColorBlack = findViewById(R.id.lyric_color_black)
@@ -109,11 +121,11 @@ class SettingsActivity : AppCompatActivity() {
         versionValue = findViewById(R.id.version_value)
         versionValue.text = currentVersionName
 
-        // 设置页默认对齐悬浮窗当前实际模式（收起/展开），改哪套就是看得见的那套。
-        settingsTargetIsCompact = currentOverlayIsCompact()
-
         // 悬浮窗开关
         findViewById<View>(R.id.cell_overlay_toggle).setOnClickListener { toggleOverlay() }
+        overlayToggle.setOnCheckedChangeListener { _, _ ->
+            if (!updatingOverlayToggle) toggleOverlay()
+        }
         // 权限
         findViewById<View>(R.id.cell_listener_permission).setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -134,10 +146,6 @@ class SettingsActivity : AppCompatActivity() {
         themeLight.setOnClickListener { setTheme(ThemePrefs.LIGHT) }
         themeDark.setOnClickListener { setTheme(ThemePrefs.DARK) }
 
-        // 设置对象
-        settingsTargetExpanded.setOnClickListener { setSettingsTarget(false) }
-        settingsTargetCompact.setOnClickListener { setSettingsTarget(true) }
-
         // 背景：透明 / 半透明 / 不透明
         backgroundModeTransparent.setOnClickListener { setBackgroundMode(LyricsOverlayService.BACKGROUND_TRANSPARENT) }
         backgroundModeLow.setOnClickListener { setBackgroundMode(LyricsOverlayService.BACKGROUND_LOW) }
@@ -156,17 +164,14 @@ class SettingsActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(sb: SeekBar?) = Unit
         })
 
-        // 偏移
-        seekLyricOffset.max = 100
-        seekLyricOffset.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                val offsetMs = LyricsOverlayService.LYRIC_OFFSET_MIN_MS + progress * 100
-                lyricOffsetValue.text = formatOffset(offsetMs)
-                if (fromUser) setLyricOffset(offsetMs)
-            }
-            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
-            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
-        })
+        // 正偏移让歌词提前，用自然语言操作，不要求用户理解正负号。
+        offsetEarlier.setOnClickListener { setLyricOffset(displayedOffsetMs + 100) }
+        offsetLater.setOnClickListener { setLyricOffset(displayedOffsetMs - 100) }
+        offsetReset.setOnClickListener { setLyricOffset(0) }
+        findViewById<View>(R.id.context_before_less).setOnClickListener { changeContext(true, -1) }
+        findViewById<View>(R.id.context_before_more).setOnClickListener { changeContext(true, 1) }
+        findViewById<View>(R.id.context_after_less).setOnClickListener { changeContext(false, -1) }
+        findViewById<View>(R.id.context_after_more).setOnClickListener { changeContext(false, 1) }
 
         // 颜色
         listOf(
@@ -221,15 +226,17 @@ class SettingsActivity : AppCompatActivity() {
             stopService(Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_STOP
             })
-            overlayToggleState.postDelayed({ updatePermissionStates() }, 250)
+            overlayToggle.postDelayed({ updatePermissionStates() }, 250)
             return
         }
         if (!hasNotificationListenerAccess()) {
             Toast.makeText(this, "请先授予通知使用权", Toast.LENGTH_SHORT).show()
+            updatePermissionStates()
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); return
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             Toast.makeText(this, "请先允许显示悬浮窗", Toast.LENGTH_SHORT).show()
+            updatePermissionStates()
             startActivity(
                 Intent(
                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -243,23 +250,35 @@ class SettingsActivity : AppCompatActivity() {
                 action = LyricsOverlayService.ACTION_START
             }
         )
-        overlayToggleState.postDelayed({ updatePermissionStates() }, 250)
+        overlayToggle.postDelayed({ updatePermissionStates() }, 250)
     }
 
     override fun onResume() {
         super.onResume()
         refreshAll()
+        overlayPrefs.registerOnSharedPreferenceChangeListener(offsetPreferenceListener)
+        ContextCompat.registerReceiver(
+            this, overlayStateReceiver, IntentFilter(LyricsOverlayService.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+    }
+
+    override fun onPause() {
+        overlayPrefs.unregisterOnSharedPreferenceChangeListener(offsetPreferenceListener)
+        unregisterReceiver(overlayStateReceiver)
+        super.onPause()
     }
 
     private fun refreshAll() {
         updatePermissionStates()
         updateThemeUi()
-        updateSettingsTargetUi()
         updateBackgroundModeUi()
         updateFontSizeUi()
         updateLyricOffsetUi()
         updateLyricColorUi()
         updateTranslationModeUi()
+        updateContextUi()
+        updateOverlayPreview()
     }
 
     // ---------- 主题 ----------
@@ -290,24 +309,70 @@ class SettingsActivity : AppCompatActivity() {
         val overlayOk = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
         listenerState.text = if (listenerOk) "已授权" else "去开启"
         overlayState.text = if (overlayOk) "已授权" else "去开启"
-        overlayToggleState.text = if (LyricsOverlayService.isRunning) "运行中" else "已关闭"
+        updatingOverlayToggle = true
+        overlayToggle.isChecked = LyricsOverlayService.isRunning
+        updatingOverlayToggle = false
     }
 
-    // ---------- 设置对象 ----------
-    private fun setSettingsTarget(compact: Boolean) {
-        if (settingsTargetIsCompact == compact) return
-        settingsTargetIsCompact = compact
-        updateSettingsTargetUi()
-        updateBackgroundModeUi()
-        updateFontSizeUi()
-        updateLyricColorUi()
+    // ---------- 小歌词窗上下文与预览 ----------
+    private fun contextLines(before: Boolean): Int = overlayPrefs.getInt(
+        if (before) LyricsOverlayService.PREF_CONTEXT_BEFORE else LyricsOverlayService.PREF_CONTEXT_AFTER,
+        if (before) 0 else 1
+    ).coerceIn(0, 2)
+
+    private fun changeContext(before: Boolean, delta: Int) {
+        val key = if (before) LyricsOverlayService.PREF_CONTEXT_BEFORE else LyricsOverlayService.PREF_CONTEXT_AFTER
+        overlayPrefs.edit().putInt(key, (contextLines(before) + delta).coerceIn(0, 2)).apply()
+        updateContextUi()
+        updateOverlayPreview()
+        if (LyricsOverlayService.isRunning) {
+            startService(Intent(this, LyricsOverlayService::class.java).apply {
+                action = LyricsOverlayService.ACTION_SET_CONTEXT
+            })
+        }
     }
 
-    private fun updateSettingsTargetUi() {
-        applySeg(
-            listOf(settingsTargetExpanded to "expanded", settingsTargetCompact to "compact"),
-            if (settingsTargetIsCompact) "compact" else "expanded"
+    private fun updateContextUi() {
+        val before = contextLines(true)
+        val after = contextLines(false)
+        findViewById<TextView>(R.id.context_before_value).text = "$before 句"
+        findViewById<TextView>(R.id.context_after_value).text = "$after 句"
+        findViewById<View>(R.id.context_before_less).isEnabled = before > 0
+        findViewById<View>(R.id.context_before_more).isEnabled = before < 2
+        findViewById<View>(R.id.context_after_less).isEnabled = after > 0
+        findViewById<View>(R.id.context_after_more).isEnabled = after < 2
+    }
+
+    private fun updateOverlayPreview() {
+        val percent = overlayPrefs.getInt(fontScalePreferenceKey(), expandedFontScale())
+            .coerceIn(LyricsOverlayService.FONT_SCALE_MIN_PERCENT, LyricsOverlayService.FONT_SCALE_MAX_PERCENT)
+        val color = runCatching {
+            Color.parseColor(overlayPrefs.getString(lyricColorPreferenceKey(), expandedLyricColor()))
+        }.getOrDefault(Color.WHITE)
+        val before = contextLines(true)
+        val after = contextLines(false)
+        val lines = listOf(
+            R.id.preview_before_two to (before >= 2), R.id.preview_before_one to (before >= 1),
+            R.id.preview_current to true,
+            R.id.preview_after_one to (after >= 1), R.id.preview_after_two to (after >= 2)
         )
+        lines.forEach { (id, visible) ->
+            findViewById<TextView>(id).apply {
+                visibility = if (visible) View.VISIBLE else View.GONE
+                setTextColor(color)
+                alpha = if (id == R.id.preview_current) 1f else .72f
+                setTextSize(TypedValue.COMPLEX_UNIT_DIP, (if (id == R.id.preview_current) 30f else 23f) * percent / 100f)
+            }
+        }
+        val mode = overlayPrefs.getString(backgroundPreferenceKey(), expandedBackgroundMode())
+        overlayPreview.background = GradientDrawable().apply {
+            cornerRadius = 10f * resources.displayMetrics.density
+            setColor(when (mode) {
+                LyricsOverlayService.BACKGROUND_TRANSPARENT -> Color.TRANSPARENT
+                LyricsOverlayService.BACKGROUND_HIGH -> Color.argb(245, 12, 12, 14)
+                else -> Color.argb(140, 12, 12, 14)
+            })
+        }
     }
 
     // ---------- 背景：透明 / 半透明 / 不透明 ----------
@@ -321,11 +386,12 @@ class SettingsActivity : AppCompatActivity() {
         }
         overlayPrefs.edit().putString(backgroundPreferenceKey(), normalized).apply()
         updateBackgroundModeUi()
+        updateOverlayPreview()
         if (LyricsOverlayService.isRunning) {
             startService(Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_SET_BACKGROUND
                 putExtra(LyricsOverlayService.EXTRA_BACKGROUND_MODE, normalized)
-                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, settingsTargetIsCompact)
+                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, true)
             })
         }
     }
@@ -356,32 +422,14 @@ class SettingsActivity : AppCompatActivity() {
             LyricsOverlayService.FONT_SCALE_MIN_PERCENT,
             LyricsOverlayService.FONT_SCALE_MAX_PERCENT
         )
-        val previous = overlayPrefs.getInt(fontScalePreferenceKey(), expandedFontScale()).coerceIn(
-            LyricsOverlayService.FONT_SCALE_MIN_PERCENT,
-            LyricsOverlayService.FONT_SCALE_MAX_PERCENT
-        )
-        val editor = overlayPrefs.edit().putInt(fontScalePreferenceKey(), normalized)
-        if (settingsTargetIsCompact) {
-            val density = resources.displayMetrics.density
-            fun minHeightPx(value: Int): Int =
-                (LyricsOverlayService.compactMinimumHeightDp(value) * density + 0.5f).toInt()
-            val storedHeight = overlayPrefs.getInt("compact_height_v3", (48 * density + 0.5f).toInt())
-            val previousMin = minHeightPx(previous)
-            val nextMin = minHeightPx(normalized)
-            val adjustedHeight = if (storedHeight <= previousMin + (2 * density + 0.5f).toInt()) {
-                nextMin
-            } else {
-                maxOf(storedHeight, nextMin)
-            }
-            editor.putInt("compact_height_v3", adjustedHeight)
-        }
-        editor.apply()
+        overlayPrefs.edit().putInt(fontScalePreferenceKey(), normalized).apply()
+        updateOverlayPreview()
         fontSizeValue.text = "$normalized%"
         if (LyricsOverlayService.isRunning) {
             startService(Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_SET_FONT_SCALE
                 putExtra(LyricsOverlayService.EXTRA_FONT_SCALE_PERCENT, normalized)
-                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, settingsTargetIsCompact)
+                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, true)
             })
         }
     }
@@ -395,53 +443,61 @@ class SettingsActivity : AppCompatActivity() {
         seekFontSize.progress = percent - LyricsOverlayService.FONT_SCALE_MIN_PERCENT
     }
 
-    // ---------- 偏移 ----------
+    // ---------- 歌词同步 ----------
     private fun setLyricOffset(value: Int) {
+        val identity = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_IDENTITY, "").orEmpty()
+        val source = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_SOURCE, "").orEmpty()
+        if (identity.isBlank() || source.isBlank()) return
         val normalized = value.coerceIn(
             LyricsOverlayService.LYRIC_OFFSET_MIN_MS,
             LyricsOverlayService.LYRIC_OFFSET_MAX_MS
         )
+        val title = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_TITLE, "").orEmpty()
+        val artist = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_ARTIST, "").orEmpty()
+        // 先保存这首歌的数值，快速连点不依赖服务消息的处理时机。
+        LyricsOverlayService.writeLyricOffsetMemory(overlayPrefs, identity, source, title, artist, normalized)
         overlayPrefs.edit().putInt(LyricsOverlayService.PREF_LYRIC_OFFSET_MS, normalized).apply()
-        lyricOffsetValue.text = formatOffset(normalized)
-        seekLyricOffset.progress = (normalized - LyricsOverlayService.LYRIC_OFFSET_MIN_MS) / 100
+        showLyricOffset(normalized, true)
         if (LyricsOverlayService.isRunning) {
-            // 悬浮窗在跑：交给它写 per-song 记忆（它知道当前歌词身份）
             startService(Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_SET_LYRIC_OFFSET
                 putExtra(LyricsOverlayService.EXTRA_LYRIC_OFFSET_MS, normalized)
+                putExtra(LyricsOverlayService.EXTRA_LYRIC_OFFSET_MEMORY_KEY,
+                    LyricsOverlayService.lyricOffsetPreferenceKey(identity, source))
             })
-        } else {
-            // 悬浮窗没跑：用主页最近记录的当前歌词身份，直接写 per-song 记忆，保持与悬浮窗一致
-            val identity = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_IDENTITY, "").orEmpty()
-            val source = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_SOURCE, "").orEmpty()
-            val title = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_TITLE, "").orEmpty()
-            val artist = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_ARTIST, "").orEmpty()
-            if (identity.isNotBlank() && source.isNotBlank()) {
-                LyricsOverlayService.writeLyricOffsetMemory(overlayPrefs, identity, source, title, artist, normalized)
-            }
         }
     }
 
     private fun updateLyricOffsetUi() {
-        val value = (LyricsOverlayService.instance?.currentLyricOffsetMs()
-            ?: overlayPrefs.getInt(LyricsOverlayService.PREF_LYRIC_OFFSET_MS, 0))
-            .coerceIn(LyricsOverlayService.LYRIC_OFFSET_MIN_MS, LyricsOverlayService.LYRIC_OFFSET_MAX_MS)
-        lyricOffsetValue.text = formatOffset(value)
-        seekLyricOffset.progress = (value - LyricsOverlayService.LYRIC_OFFSET_MIN_MS) / 100
+        val identity = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_IDENTITY, "").orEmpty()
+        val source = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_SOURCE, "").orEmpty()
+        val title = overlayPrefs.getString(LyricsOverlayService.PREF_ACTIVE_LYRIC_TITLE, "").orEmpty()
+        val available = identity.isNotBlank() && source.isNotBlank()
+        val value = if (available) overlayPrefs.getInt(
+            LyricsOverlayService.lyricOffsetPreferenceKey(identity, source), 0
+        ) else 0
+        lyricOffsetScope.text = if (available) "《${title.ifBlank { "当前歌曲" }}》 · $source" else "播放一首歌后，可为这首歌单独校准"
+        showLyricOffset(value, available)
     }
 
-    private fun formatOffset(value: Int): String =
-        String.format(java.util.Locale.ROOT, "%+.1fs", value / 1000f)
+    private fun showLyricOffset(value: Int, available: Boolean) {
+        displayedOffsetMs = value.coerceIn(LyricsOverlayService.LYRIC_OFFSET_MIN_MS, LyricsOverlayService.LYRIC_OFFSET_MAX_MS)
+        lyricOffsetValue.text = LyricSyncText.format(displayedOffsetMs)
+        offsetEarlier.isEnabled = available && displayedOffsetMs < LyricsOverlayService.LYRIC_OFFSET_MAX_MS
+        offsetLater.isEnabled = available && displayedOffsetMs > LyricsOverlayService.LYRIC_OFFSET_MIN_MS
+        offsetReset.isEnabled = available && displayedOffsetMs != 0
+    }
 
     // ---------- 颜色 ----------
     private fun setLyricColor(color: String) {
         overlayPrefs.edit().putString(lyricColorPreferenceKey(), color).apply()
         updateLyricColorUi()
+        updateOverlayPreview()
         if (LyricsOverlayService.isRunning) {
             startService(Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_SET_LYRIC_COLOR
                 putExtra(LyricsOverlayService.EXTRA_LYRIC_COLOR, color)
-                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, settingsTargetIsCompact)
+                putExtra(LyricsOverlayService.EXTRA_TARGET_COMPACT, true)
             })
         }
     }
@@ -456,7 +512,8 @@ class SettingsActivity : AppCompatActivity() {
         )
         options.forEach { (option, color) ->
             val isSelected = color.equals(selected, ignoreCase = true)
-            option.alpha = if (isSelected) 1f else 0.5f
+            option.alpha = if (isSelected) 1f else 0.65f
+            option.isSelected = isSelected
             // 选中的圆点加个描边框（用 background ring）
             option.background = if (isSelected) ringDrawable() else null
         }
@@ -511,6 +568,8 @@ class SettingsActivity : AppCompatActivity() {
         val secondary = resolveColor(R.color.text_secondary)
         options.forEach { (option, value) ->
             val isSelected = value == selected
+            option.isSelected = isSelected
+            option.isFocusable = true
             option.setBackgroundResource(if (isSelected) R.drawable.bg_seg_on else android.R.color.transparent)
             option.setTextColor(if (isSelected) onAccent else secondary)
             option.typeface = android.graphics.Typeface.create(
@@ -604,18 +663,13 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     // ---------- 偏好 key ----------
-    private fun backgroundPreferenceKey(): String = if (settingsTargetIsCompact) {
-        LyricsOverlayService.PREF_BACKGROUND_MODE_COMPACT
-    } else LyricsOverlayService.PREF_BACKGROUND_MODE
+    private fun backgroundPreferenceKey(): String = LyricsOverlayService.PREF_BACKGROUND_MODE_COMPACT
 
-    private fun fontScalePreferenceKey(): String = if (settingsTargetIsCompact) {
-        LyricsOverlayService.PREF_FONT_SCALE_COMPACT_PERCENT
-    } else LyricsOverlayService.PREF_FONT_SCALE_PERCENT
+    private fun fontScalePreferenceKey(): String = LyricsOverlayService.PREF_FONT_SCALE_COMPACT_PERCENT
 
-    private fun lyricColorPreferenceKey(): String = if (settingsTargetIsCompact) {
-        LyricsOverlayService.PREF_LYRIC_COLOR_COMPACT
-    } else LyricsOverlayService.PREF_LYRIC_COLOR
+    private fun lyricColorPreferenceKey(): String = LyricsOverlayService.PREF_LYRIC_COLOR_COMPACT
 
+    // 小窗尚无独立偏好时，沿用旧安装的外观。
     private fun expandedBackgroundMode(): String = overlayPrefs.getString(
         LyricsOverlayService.PREF_BACKGROUND_MODE,
         LyricsOverlayService.BACKGROUND_DEFAULT
