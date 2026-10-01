@@ -31,7 +31,7 @@ The video shows an earlier UI; the current source uses only a compact lyrics win
 - Parallel searches across LRCLIB, QQ Music, and NetEase Cloud Music, ranked by title, artist, album, duration, and version metadata; an iTunes catalog lookup can supply localized aliases when every direct search fails
 - QQ Music and NetEase word-timed lyrics and official translations, with original, bilingual, or translated display modes
 - A compact, lyrics-only overlay with drag, position lock/unlock, and close controls; no expanded mode, overlay full-screen view, rotation, or popup menu
-- Playback controls remain on the home screen, alongside a persistent overlay switch
+- A lyric icon just left of “⋯” in the bottom player toggles the overlay and highlights when active; detailed settings remain under “⋯ → Settings”
 - Show 0–2 preceding and following lines, with automatic height and time-aware scrolling of the current line
 - Adjustable font size from 35% to 150%, with an appearance/context preview in settings
 - Explicit “0.1 s earlier”, “0.1 s later”, and reset actions within ±5 seconds, remembered per track and source
@@ -61,7 +61,7 @@ Long-running behavior may vary with vendor-specific battery restrictions. If the
 1. Download the latest APK from [Releases](https://github.com/LuoH-AN/desktop-lyrics/releases/latest).
 2. Install and open Desktop Lyrics.
 3. Grant Notification Access and the Display over other apps permission.
-4. Turn on the Desktop Lyrics switch on the home screen, then play music. Granting permission does not itself enable the overlay.
+4. Tap the lyric icon to the left of “⋯” in the bottom player to enable the overlay; tap it again to disable it. Detailed controls remain under “⋯ → Settings”. Granting permission does not itself enable the overlay.
 5. Drag the lyrics area to move the window. Use the lock icon to lock/unlock its position, or × to close it.
 6. Adjust font size and preceding/following line counts in settings. Zero context shows only the current line, plus its translation when enabled.
 7. If lyrics lag, make them earlier; if they lead, make them later.

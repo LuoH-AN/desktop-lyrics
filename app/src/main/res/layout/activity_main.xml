@@ -5,47 +5,10 @@
     android:layout_height="match_parent"
     android:background="@color/app_bg">
 
-    <LinearLayout
+    <WebView
+        android:id="@+id/lyric_web"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical">
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:minHeight="56dp"
-            android:paddingStart="22dp"
-            android:paddingEnd="14dp">
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="桌面歌词"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp" />
-            <androidx.appcompat.widget.SwitchCompat
-                android:id="@+id/main_overlay_toggle"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:contentDescription="开启或关闭桌面歌词悬浮窗" />
-            <TextView
-                android:id="@+id/main_settings"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:layout_marginStart="12dp"
-                android:paddingHorizontal="8dp"
-                android:gravity="center"
-                android:background="?android:attr/selectableItemBackground"
-                android:text="设置"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
-        </LinearLayout>
-        <WebView
-            android:id="@+id/lyric_web"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-    </LinearLayout>
+        android:layout_height="match_parent" />
 
     <!-- 权限/开启引导浮层 -->
     <LinearLayout
@@ -85,9 +48,9 @@
 
             <Button
                 android:id="@+id/gate_listener"
+                style="@style/SettingsAction"
                 android:layout_width="match_parent"
                 android:layout_height="50dp"
-                android:background="@drawable/bg_seg_shell"
                 android:fontFamily="sans-serif-medium"
                 android:stateListAnimator="@null"
                 android:text="① 授予通知使用权"
@@ -97,10 +60,10 @@
 
             <Button
                 android:id="@+id/gate_overlay_perm"
+                style="@style/SettingsAction"
                 android:layout_width="match_parent"
                 android:layout_height="50dp"
                 android:layout_marginTop="10dp"
-                android:background="@drawable/bg_seg_shell"
                 android:fontFamily="sans-serif-medium"
                 android:stateListAnimator="@null"
                 android:text="② 允许悬浮窗"
@@ -110,6 +73,7 @@
 
             <Button
                 android:id="@+id/gate_start"
+                style="@style/SettingsAction"
                 android:layout_width="match_parent"
                 android:layout_height="52dp"
                 android:layout_marginTop="16dp"

@@ -1,14 +1,52 @@
 <resources>
-    <!-- 旧的（保留兼容），overlay 全屏歌词仍用到 -->
-    <style name="SettingsAction">
+    <!-- 扁平操作：显式关闭平台和 AppCompat tint，保留自定义细边框。 -->
+    <style name="SettingsAction" parent="Widget.AppCompat.Button.Borderless">
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:textSize">14sp</item>
         <item name="android:textAllCaps">false</item>
-        <item name="android:textColor">@color/text_primary</item>
-        <item name="android:background">@drawable/bg_seg_shell</item>
+        <item name="android:textColor">@color/settings_action_text</item>
+        <item name="android:background">@drawable/bg_settings_action</item>
+        <item name="android:backgroundTint">@null</item>
+        <item name="backgroundTint">@null</item>
         <item name="android:stateListAnimator">@null</item>
+        <item name="android:elevation">0dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">48dp</item>
         <item name="android:gravity">center</item>
         <item name="android:paddingHorizontal">12dp</item>
+        <item name="android:paddingVertical">10dp</item>
+    </style>
+
+    <style name="SettingsDialogAction" parent="SettingsAction">
+        <item name="android:layout_marginStart">4dp</item>
+        <item name="android:layout_marginEnd">4dp</item>
+    </style>
+
+    <style name="SettingsSwitch" parent="Widget.AppCompat.CompoundButton.Switch">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:background">@null</item>
+        <item name="android:thumb">@drawable/settings_switch_thumb</item>
+        <item name="track">@drawable/settings_switch_track</item>
+        <item name="thumbTint">@null</item>
+        <item name="trackTint">@null</item>
+        <item name="switchMinWidth">48dp</item>
+        <item name="showText">false</item>
+        <item name="splitTrack">false</item>
+    </style>
+
+    <style name="SettingsSlider" parent="Widget.AppCompat.SeekBar">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:background">@null</item>
+        <item name="android:progressDrawable">@drawable/settings_seek_track</item>
+        <item name="android:thumb">@drawable/settings_seek_thumb</item>
+        <item name="android:thumbOffset">7dp</item>
+        <item name="android:paddingHorizontal">8dp</item>
+        <item name="android:splitTrack">false</item>
+        <item name="android:progressTint">@null</item>
+        <item name="android:progressBackgroundTint">@null</item>
+        <item name="android:thumbTint">@null</item>
     </style>
 
     <!-- ===== 设置页 分组列表样式 ===== -->
@@ -138,6 +176,8 @@
         <item name="android:minWidth">48dp</item>
         <item name="android:minHeight">48dp</item>
         <item name="android:padding">0dp</item>
+        <item name="android:paddingHorizontal">0dp</item>
+        <item name="android:paddingVertical">0dp</item>
         <item name="android:textSize">20sp</item>
     </style>
 

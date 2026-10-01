@@ -54,8 +54,7 @@
                     <TextView style="@style/CellTitle" android:text="歌词悬浮窗" />
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/overlay_toggle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="48dp"
+                        style="@style/SettingsSwitch"
                         android:contentDescription="开启或关闭歌词悬浮窗" />
                 </LinearLayout>
                 <View style="@style/CellDivider" />
@@ -80,7 +79,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="10dp"
-                        android:background="#62646A"
+                        android:background="@drawable/bg_overlay_preview"
+                        android:clipToOutline="true"
                         android:padding="12dp">
                         <LinearLayout
                             android:id="@+id/overlay_preview"
@@ -105,26 +105,21 @@
                     </LinearLayout>
                     <SeekBar
                         android:id="@+id/seek_font_size"
-                        android:layout_width="match_parent"
-                        android:layout_height="48dp"
+                        style="@style/SettingsSlider"
                         android:contentDescription="悬浮歌词字号"
                         android:max="115"
-                        android:progress="65"
-                        android:progressBackgroundTint="@color/control_track"
-                        android:progressTint="@color/control_active"
-                        android:splitTrack="false"
-                        android:thumbTint="@color/control_active" />
+                        android:progress="65" />
                 </LinearLayout>
                 <View style="@style/CellDivider" />
                 <LinearLayout style="@style/CellColumn">
                     <TextView style="@style/CellColumnLabel" android:text="上下文展示" />
-                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="64dp" android:gravity="center_vertical" android:orientation="horizontal">
                         <TextView style="@style/CellTitle" android:text="前面几句" />
                         <Button android:id="@+id/context_before_less" style="@style/StepButton" android:text="−" android:contentDescription="少显示一句前文" />
                         <TextView android:id="@+id/context_before_value" style="@style/StepValue" android:text="0 句" />
                         <Button android:id="@+id/context_before_more" style="@style/StepButton" android:text="＋" android:contentDescription="多显示一句前文" />
                     </LinearLayout>
-                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="64dp" android:gravity="center_vertical" android:orientation="horizontal">
                         <TextView style="@style/CellTitle" android:text="后面几句" />
                         <Button android:id="@+id/context_after_less" style="@style/StepButton" android:text="−" android:contentDescription="少显示一句后文" />
                         <TextView android:id="@+id/context_after_value" style="@style/StepValue" android:text="1 句" />

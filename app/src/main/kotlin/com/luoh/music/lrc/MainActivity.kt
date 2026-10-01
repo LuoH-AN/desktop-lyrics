@@ -23,7 +23,6 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -47,10 +46,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var web: WebView
     private lateinit var gate: View
     private lateinit var gateStatus: TextView
-    private lateinit var overlayToggle: SwitchCompat
-    private var updatingOverlayToggle = false
     private val overlayStateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) = updateOverlayToggle()
+        override fun onReceive(context: Context?, intent: Intent?) = updateOverlayState()
     }
 
     private val overlayPrefs by lazy {
@@ -120,15 +117,6 @@ class MainActivity : AppCompatActivity() {
         web = findViewById(R.id.lyric_web)
         gate = findViewById(R.id.gate_overlay)
         gateStatus = findViewById(R.id.gate_status)
-        overlayToggle = findViewById(R.id.main_overlay_toggle)
-        overlayToggle.setOnCheckedChangeListener { _, checked ->
-            if (!updatingOverlayToggle) {
-                if (checked) tryStartOverlay()
-                else stopService(Intent(this, LyricsOverlayService::class.java))
-                updateOverlayToggle()
-            }
-        }
-        findViewById<View>(R.id.main_settings).setOnClickListener { openSettings() }
 
         web.settings.apply {
             javaScriptEnabled = true
@@ -140,6 +128,7 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 webReady = true
                 applyThemeToWeb()
+                updateOverlayState()
                 pushSnapshot()
             }
         }
@@ -221,14 +210,12 @@ class MainActivity : AppCompatActivity() {
     private fun hasOverlay(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
 
-    private fun updateOverlayToggle() {
-        updatingOverlayToggle = true
-        overlayToggle.isChecked = LyricsOverlayService.isRunning
-        updatingOverlayToggle = false
+    private fun updateOverlayState() {
+        evalJs("window.LyricHome && window.LyricHome.setOverlayState(${LyricsOverlayService.isRunning});")
     }
 
     private fun updateGate() {
-        updateOverlayToggle()
+        updateOverlayState()
         val listenerOk = hasListener()
         val overlayOk = hasOverlay()
         // 只要有通知使用权就能读歌显示歌词页；两者都齐才能开悬浮窗
@@ -237,7 +224,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             gate.visibility = View.VISIBLE
             gateStatus.text = when {
-                !listenerOk && !overlayOk -> "通知使用权用于获取正在播放的歌曲，不读取聊天通知正文。\n开启桌面歌词还需悬浮窗权限；授权后可在主页打开开关。"
+                !listenerOk && !overlayOk -> "通知使用权用于获取正在播放的歌曲，不读取聊天通知正文。\n开启桌面歌词还需悬浮窗权限；授权后点底部中控台的歌词图标即可开启。"
                 !listenerOk -> "通知使用权用于获取正在播放的歌曲，不读取聊天通知正文。"
                 else -> "准备就绪"
             }
@@ -677,6 +664,18 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- JS 桥 ----------
     inner class HomeBridge {
+        @JavascriptInterface
+        fun toggleOverlay() {
+            runOnUiThread {
+                if (LyricsOverlayService.isRunning) {
+                    stopService(Intent(this@MainActivity, LyricsOverlayService::class.java))
+                } else {
+                    tryStartOverlay()
+                }
+                updateOverlayState()
+            }
+        }
+
         @JavascriptInterface
         fun openMore() {
             runOnUiThread { openSettings() }

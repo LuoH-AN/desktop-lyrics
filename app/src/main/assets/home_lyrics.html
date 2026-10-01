@@ -143,18 +143,27 @@
     background-size:cover; background-position:center;
   }
   #meta { min-width:0; flex:1; display:flex; align-items:center; justify-content:space-between; gap:10px; }
-  #metaText { min-width:0; }
+  #metaText { min-width:0; flex:1; }
   #song { font-size:16px; font-weight:700; letter-spacing:-.3px; color:var(--song);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:color .4s ease; }
   #singer { font-size:13px; font-weight:500; margin-top:2px; color:var(--singer);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:color .4s ease; }
-  #more {
-    flex-shrink:0; width:48px; height:48px; margin-right:-8px; padding:0; border:0; background:transparent;
+  #barActions { display:flex; align-items:center; flex-shrink:0; margin-right:-8px; }
+  .bar-action {
+    position:relative; flex-shrink:0; width:48px; height:48px; padding:0; border:0; background:transparent;
     display:flex; align-items:center; justify-content:center;
-    color:var(--dots); font-size:22px; line-height:1; letter-spacing:1px; cursor:pointer;
-    transition:opacity .15s ease;
+    color:var(--dots); cursor:pointer; border-radius:10px;
+    transition:color .18s ease, opacity .15s ease, transform .15s ease;
   }
-  #more:active { opacity:.4; }
+  .bar-action:active { opacity:.5; transform:scale(.92); }
+  #more { font-size:22px; line-height:1; letter-spacing:1px; }
+  #btnOverlay::before {
+    content:""; position:absolute; inset:7px; border-radius:8px;
+    border:1px solid var(--bar-line); transition:background-color .18s ease, border-color .18s ease;
+  }
+  #btnOverlay svg { position:relative; width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  #btnOverlay[aria-pressed="true"] { color:var(--bg); }
+  #btnOverlay[aria-pressed="true"]::before { background:var(--song); border-color:var(--song); }
 
   #progWrap { margin-top:4px; cursor:pointer; padding:22px 0; touch-action:none; }
   #progTrack { height:3px; border-radius:2px; background:var(--prog-track); position:relative; transition:height .18s ease; }
@@ -232,7 +241,12 @@
           <div id="song">未在播放</div>
           <div id="singer"></div>
         </div>
-        <button id="more" type="button" aria-label="更多" title="更多">⋯</button>
+        <div id="barActions">
+          <button id="btnOverlay" class="bar-action" type="button" aria-label="显示桌面歌词" aria-pressed="false" title="显示桌面歌词">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H9l-5 3v-4a3 3 0 0 1-1-2V7a3 3 0 0 1 3-3Z"/><path d="M7 9h10M7 14h7"/></svg>
+          </button>
+          <button id="more" class="bar-action" type="button" aria-label="更多" title="更多">⋯</button>
+        </div>
       </div>
     </div>
     <div id="progWrap" role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><div id="progTrack"><div id="progFill"></div><div id="progKnob"></div></div></div>
@@ -278,6 +292,7 @@
   var songEl = document.getElementById('song');
   var singerEl = document.getElementById('singer');
   var moreEl = document.getElementById('more');
+  var btnOverlay = document.getElementById('btnOverlay');
   var progWrap = document.getElementById('progWrap');
   var progFill = document.getElementById('progFill');
   var tCur = document.getElementById('tCur');
@@ -326,6 +341,19 @@
   // ---- 原生调用入口 ----
   function bridge(name){ try{ return window.LyricHomeNative && window.LyricHomeNative[name]; }catch(e){ return null; } }
   function callNative(name){ var f=bridge(name); if(f){ var a=Array.prototype.slice.call(arguments,1); try{ window.LyricHomeNative[name].apply(window.LyricHomeNative,a); }catch(e){} return true; } return false; }
+
+  // ---------- 桌面歌词快捷开关（实际状态由原生服务回传） ----------
+  var overlayEnabled = false;
+  function setOverlayState(enabled){
+    overlayEnabled = !!enabled;
+    var label = overlayEnabled ? '关闭桌面歌词' : '显示桌面歌词';
+    btnOverlay.setAttribute('aria-pressed', String(overlayEnabled));
+    btnOverlay.setAttribute('aria-label', label);
+    btnOverlay.setAttribute('title', label);
+  }
+  btnOverlay.addEventListener('click', function(){
+    if(!callNative('toggleOverlay')) setOverlayState(!overlayEnabled); // 浏览器预览
+  });
 
   // ---------- ⋯ 动作菜单 ----------
   function openSheet(){
@@ -621,6 +649,7 @@
   //  公开 API（原生调用）
   // ===================================================================
   window.LyricHome = {
+    setOverlayState: setOverlayState,
     setTheme: function(t){ document.documentElement.setAttribute('data-theme', t==='light'?'light':'dark'); },
 
     // 前台/后台切换：后台时停 rAF 释放 CPU（替代进程级 pauseTimers）

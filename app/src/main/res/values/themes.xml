@@ -6,6 +6,20 @@
         <item name="android:statusBarColor">@color/status_bar</item>
         <item name="android:navigationBarColor">@color/nav_bar</item>
         <item name="android:colorAccent">@color/accent</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="colorControlActivated">@color/control_active</item>
+        <item name="colorControlHighlight">@color/app_line_soft</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.DesktopLyrics.Dialog</item>
         <item name="android:windowBackground">@color/app_bg</item>
+    </style>
+
+    <style name="ThemeOverlay.DesktopLyrics.Dialog" parent="ThemeOverlay.AppCompat.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/bg_dialog_card</item>
+        <item name="android:colorBackground">@color/app_surface</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="buttonBarPositiveButtonStyle">@style/SettingsDialogAction</item>
+        <item name="buttonBarNegativeButtonStyle">@style/SettingsDialogAction</item>
     </style>
 </resources>
