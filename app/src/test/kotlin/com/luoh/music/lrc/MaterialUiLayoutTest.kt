@@ -129,6 +129,11 @@ class MaterialUiLayoutTest {
         val mainPlay = home.findViewById<MaterialButton>(R.id.home_play)
         assertEquals(255, android.graphics.Color.alpha(mainPlay.backgroundTintList!!.defaultColor))
         assertEquals(0, mainPlay.strokeWidth)
+        val playBounds = android.graphics.Rect(0, 0, mainPlay.width, mainPlay.height)
+        home.offsetDescendantRectToMyCoords(mainPlay, playBounds)
+        assertTrue("Playback controls must fit vertically", playBounds.bottom <= home.height)
+        assertTrue("Playback controls must fit horizontally", playBounds.left >= 0 && playBounds.right <= home.width)
+        assertTrue("Lyrics must retain a viewport", home.findViewById<View>(R.id.home_lyrics_scroll).height > 0)
         val overlay = home.findViewById<MaterialButton>(R.id.home_overlay)
         val more = home.findViewById<MaterialButton>(R.id.home_more)
         assertEquals(more.width, overlay.width)
@@ -173,6 +178,16 @@ class MaterialUiLayoutTest {
     @Test fun modernHomeOnLargerPhoneInDarkTheme() {
         RuntimeEnvironment.setQualifiers("w390dp-h780dp-night")
         assertHome("home-large-dark", 390, 780)
+    }
+
+    @Test fun modernHomeFitsLandscape() {
+        RuntimeEnvironment.setQualifiers("w780dp-h360dp")
+        assertHome("home-landscape", 780, 360)
+    }
+
+    @Test fun modernHomeFitsShortWindow() {
+        RuntimeEnvironment.setQualifiers("w320dp-h480dp")
+        assertHome("home-short", 320, 480)
     }
 
     @Test fun modernEmptyStateKeepsControlsAvailable() {

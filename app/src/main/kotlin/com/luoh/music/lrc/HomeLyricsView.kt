@@ -74,6 +74,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     private var activeIndex = -2
     private var dragging = false
     private var overlayRunning = false
+    private var wideLayout = false
     private var lastProgressPaint = 0L
     private var manualScrollUntil = 0L
     private var scrollAnimation: ValueAnimator? = null
@@ -97,6 +98,8 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         preventCornerOverlap = false
         strokeWidth = 0
     }
+    private val bar = LinearLayout(context).apply { orientation = VERTICAL }
+    private val transport = LinearLayout(context).apply { gravity = Gravity.CENTER }
     private val playbackStatus = Chip(context).apply {
         id = R.id.home_playback_status
         text = "等待播放"
@@ -245,10 +248,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         stage.addView(bottomFade, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40), Gravity.BOTTOM))
         addView(stage, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
-        val bar = LinearLayout(context).apply {
-            orientation = VERTICAL
-            setPadding(dp(16), dp(8), dp(16), dp(20))
-        }
+        bar.setPadding(dp(16), dp(8), dp(16), dp(20))
         val utilities = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
         utilities.addView(playbackStatus, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         utilities.addView(View(context), LayoutParams(0, 0, 1f))
@@ -269,7 +269,6 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         times.addView(timeCurrent, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
         times.addView(timeDuration, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         bar.addView(times)
-        val transport = LinearLayout(context).apply { gravity = Gravity.CENTER }
         transport.addView(previous, LayoutParams(dp(48), dp(48)))
         transport.addView(play, LayoutParams(dp(88), dp(64)).apply { marginStart = dp(20); marginEnd = dp(20) })
         transport.addView(next, LayoutParams(dp(48), dp(48)))
@@ -309,6 +308,30 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val availableWidth = MeasureSpec.getSize(widthMeasureSpec)
+        val availableHeight = MeasureSpec.getSize(heightMeasureSpec)
+        val wide = availableWidth >= dp(600) && availableWidth > availableHeight
+        val compact = availableHeight < dp(520)
+        if (wideLayout != wide) {
+            wideLayout = wide
+            orientation = if (wide) HORIZONTAL else VERTICAL
+            (stage.layoutParams as LayoutParams).apply {
+                width = if (wide) 0 else LayoutParams.MATCH_PARENT
+                height = if (wide) LayoutParams.MATCH_PARENT else 0
+                weight = 1f
+            }
+        }
+        toolbar.visibility = if (wide || compact) GONE else VISIBLE
+        (playerCard.layoutParams as LayoutParams).apply {
+            width = if (wide) (availableWidth * .44f).toInt().coerceIn(dp(288), dp(360)) else LayoutParams.MATCH_PARENT
+            gravity = if (wide) Gravity.CENTER_VERTICAL else Gravity.NO_GRAVITY
+        }
+        val titleLines = if (compact) 1 else 2
+        if (song.maxLines != titleLines) song.maxLines = titleLines
+        (coverTile.layoutParams as LayoutParams).apply { width = dp(if (compact) 48 else 60); height = width }
+        (play.layoutParams as LayoutParams).height = dp(if (compact) 56 else 64)
+        (transport.layoutParams as LayoutParams).topMargin = dp(if (compact) 8 else 12)
+        bar.setPadding(dp(16), dp(if (compact) 4 else 8), dp(16), dp(if (compact) 12 else 20))
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         val top = (stage.measuredHeight * .42f).toInt()
         val bottom = (stage.measuredHeight * .58f).toInt()
@@ -511,7 +534,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         val position = clock.positionMs() + lyricOffsetMs
         document.lines.forEach { line ->
             val row = LyricLineView(context).apply {
-                textSize = 30f
+                textSize = if (resources.configuration.screenWidthDp < 360) 26f else 30f
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 isSingleLine = false
                 setHorizontallyScrolling(false)
@@ -676,6 +699,8 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         dialog.setOnDismissListener { if (menu === dialog) menu = null }
         menu = dialog
         dialog.show()
+        dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.backgroundTintList =
+            ColorStateList.valueOf(color(R.color.app_surface))
         dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
     }
 
