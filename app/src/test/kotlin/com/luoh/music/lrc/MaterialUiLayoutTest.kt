@@ -10,6 +10,9 @@ import android.webkit.WebView
 import android.widget.LinearLayout
 import androidx.appcompat.view.ContextThemeWrapper
 import androidx.test.core.app.ApplicationProvider
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.slider.Slider
@@ -91,8 +94,9 @@ class MaterialUiLayoutTest {
     private class Actions : HomeLyricsView.Actions {
         var overlays = 0
         var seekPosition = -1L
+        var settingsOpened = 0
         override fun toggleOverlay() { overlays++ }
-        override fun openSettings() {}
+        override fun openSettings() { settingsOpened++ }
         override fun seekTo(positionMs: Long) { seekPosition = positionMs }
         override fun togglePlay() {}
         override fun skipPrev() {}
@@ -101,7 +105,7 @@ class MaterialUiLayoutTest {
         override fun manageCustomLyrics() {}
     }
 
-    private fun assertHome(preview: String) {
+    private fun assertHome(preview: String, widthDp: Int = 320, heightDp: Int = 640) {
         val home = HomeLyricsView(context())
         val actions = Actions()
         home.actions = actions
@@ -117,7 +121,14 @@ class MaterialUiLayoutTest {
             LyricLine(20000, "下一句，也在这里等你")
         ), true))
         home.setOverlayState(false)
-        layout(home)
+        layout(home, widthDp, heightDp)
+        val panel = home.findViewById<MaterialCardView>(R.id.home_player_card)
+        assertTrue(panel.radius >= 24 * home.resources.displayMetrics.density)
+        assertTrue(panel.width < home.width)
+        assertTrue(home.findViewById<View>(R.id.home_toolbar) is MaterialToolbar)
+        val mainPlay = home.findViewById<MaterialButton>(R.id.home_play)
+        assertEquals(255, android.graphics.Color.alpha(mainPlay.backgroundTintList!!.defaultColor))
+        assertEquals(0, mainPlay.strokeWidth)
         val overlay = home.findViewById<MaterialButton>(R.id.home_overlay)
         val more = home.findViewById<MaterialButton>(R.id.home_more)
         assertEquals(more.width, overlay.width)
@@ -134,7 +145,7 @@ class MaterialUiLayoutTest {
         home.setOverlayState(true)
         assertTrue(overlay.isSelected)
         assertTrue(android.graphics.Color.alpha(overlay.backgroundTintList!!.defaultColor) in 1..100)
-        layout(home, preview = preview)
+        layout(home, widthDp, heightDp, preview = preview)
         home.setLyrics(LyricDocument(emptyList(), true))
         home.setSnapshot(snapshot.copy(playing = false))
         assertEquals("找不到歌词", home.findViewById<android.widget.TextView>(R.id.home_empty).text.toString())
@@ -152,6 +163,56 @@ class MaterialUiLayoutTest {
     @Test fun nativeHomeControlsInDarkTheme() {
         RuntimeEnvironment.setQualifiers("w320dp-h640dp-night")
         assertHome("home-dark")
+    }
+
+    @Test fun modernHomeOnLargerPhone() {
+        RuntimeEnvironment.setQualifiers("w390dp-h780dp")
+        assertHome("home-large-light", 390, 780)
+    }
+
+    @Test fun modernHomeOnLargerPhoneInDarkTheme() {
+        RuntimeEnvironment.setQualifiers("w390dp-h780dp-night")
+        assertHome("home-large-dark", 390, 780)
+    }
+
+    @Test fun modernEmptyStateKeepsControlsAvailable() {
+        val home = HomeLyricsView(context())
+        home.setSnapshot(HomeLyricsView.Snapshot())
+        layout(home, preview = "home-empty")
+        assertEquals("未在播放", home.findViewById<android.widget.TextView>(R.id.home_empty).text.toString())
+        assertTrue(home.findViewById<android.widget.TextView>(R.id.home_empty_detail).text.isNotBlank())
+        assertTrue(home.findViewById<View>(R.id.home_more).isEnabled)
+    }
+
+    @Test fun modernMoreSheetOpensDetailedSettings() {
+        val host = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup()
+        val home = HomeLyricsView(ContextThemeWrapper(host.get(), R.style.Theme_DesktopLyrics))
+        val actions = Actions()
+        home.actions = actions
+        host.get().setContentView(home)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        home.findViewById<View>(R.id.home_more).performClick()
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as BottomSheetDialog
+        try {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(500))
+            assertTrue(dialog.isShowing)
+            assertNotNull(dialog.findViewById<View>(R.id.home_more_sheet))
+            val decor = requireNotNull(dialog.window).decorView
+            if (decor.width > 0 && decor.height > 0) {
+                val bitmap = Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888)
+                decor.draw(Canvas(bitmap))
+                val output = File("build/reports/material-ui/home-more.png")
+                output.parentFile.mkdirs()
+                output.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }
+            requireNotNull(dialog.findViewById<MaterialButton>(R.id.home_more_settings)).performClick()
+            assertEquals(1, actions.settingsOpened)
+            assertFalse(dialog.isShowing)
+        } finally {
+            dialog.dismiss()
+            host.pause().stop().destroy()
+        }
     }
 
     @Test fun iconButtonsHaveEqualTargetsAndConfirmedTranslucentState() {

@@ -21,7 +21,13 @@ import android.widget.ScrollView
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.bottomsheet.BottomSheetDragHandleView
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.chip.Chip
+import com.google.android.material.divider.MaterialDivider
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.slider.LabelFormatter
@@ -74,6 +80,38 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     private var menu: BottomSheetDialog? = null
     private val lyricRows = mutableListOf<LyricLineView>()
 
+    private val toolbar = MaterialToolbar(context).apply {
+        id = R.id.home_toolbar
+        title = "歌词"
+        subtitle = "现在，专注听歌"
+        setTitleTextAppearance(context, R.style.HomeTitle)
+        setSubtitleTextAppearance(context, R.style.HomeSubtitle)
+        setContentInsetsRelative(dp(24), dp(24))
+    }
+    private val playerCard = MaterialCardView(context).apply {
+        id = R.id.home_player_card
+        radius = dp(28).toFloat()
+        cardElevation = dp(1).toFloat()
+        maxCardElevation = dp(2).toFloat()
+        useCompatPadding = false
+        preventCornerOverlap = false
+        strokeWidth = 0
+    }
+    private val playbackStatus = Chip(context).apply {
+        id = R.id.home_playback_status
+        text = "等待播放"
+        textSize = 11f
+        isCheckable = false
+        isClickable = false
+        isFocusable = false
+        setEnsureMinTouchTargetSize(false)
+        chipMinHeight = dp(28).toFloat()
+        chipStrokeWidth = 0f
+        chipStartPadding = 0f
+        chipEndPadding = 0f
+        textStartPadding = dp(10).toFloat()
+        textEndPadding = dp(10).toFloat()
+    }
     private val stage = FrameLayout(context)
     private val scroll = ScrollView(context).apply {
         id = R.id.home_lyrics_scroll
@@ -85,11 +123,31 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         id = R.id.home_lyrics_track
         orientation = VERTICAL
     }
-    private val empty = label("未在播放", 19f).apply {
-        id = R.id.home_empty
+    private val emptyPanel = LinearLayout(context).apply {
+        orientation = VERTICAL
         gravity = Gravity.CENTER
-        setPadding(dp(32), 0, dp(32), 0)
+        setPadding(dp(28), dp(16), dp(28), dp(16))
+    }
+    private val emptyIconTile = MaterialCardView(context).apply {
+        radius = dp(24).toFloat()
+        cardElevation = 0f
+        strokeWidth = 0
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+    private val emptyIcon = ShapeableImageView(context).apply {
+        setImageResource(R.drawable.ic_home_lyrics)
+        setPadding(dp(22), dp(22), dp(22), dp(22))
+    }
+    private val empty = label("未在播放", 22f).apply {
+        id = R.id.home_empty
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        gravity = Gravity.CENTER
         ViewCompat.setAccessibilityLiveRegion(this, ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE)
+    }
+    private val emptyDetail = label("先在音乐应用中播放一首歌", 13f).apply {
+        id = R.id.home_empty_detail
+        gravity = Gravity.CENTER
+        setLineSpacing(dp(3).toFloat(), 1f)
     }
     private val interlude = label("···", 32f).apply {
         visibility = GONE
@@ -98,18 +156,23 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     }
     private val topFade = View(context)
     private val bottomFade = View(context)
-    private val divider = View(context)
+    private val coverTile = MaterialCardView(context).apply {
+        radius = dp(18).toFloat()
+        cardElevation = 0f
+        strokeWidth = 0
+        clipToOutline = true
+    }
     private val cover = ShapeableImageView(context).apply {
         id = R.id.home_cover
         scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-        shapeAppearanceModel = shapeAppearanceModel.toBuilder().setAllCornerSizes(dp(11).toFloat()).build()
-        strokeWidth = dp(1).toFloat()
+        shapeAppearanceModel = shapeAppearanceModel.toBuilder().setAllCornerSizes(dp(18).toFloat()).build()
+        strokeWidth = 0f
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
-    private val song = label("未在播放", 16f).apply {
+    private val song = label("未在播放", 20f).apply {
         id = R.id.home_song
-        typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        maxLines = 1
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        maxLines = 2
         ellipsize = TextUtils.TruncateAt.END
     }
     private val artist = label("", 13f).apply {
@@ -131,8 +194,8 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         valueTo = 1f
         stepSize = 0f
         labelBehavior = LabelFormatter.LABEL_GONE
-        trackHeight = dp(3)
-        thumbRadius = dp(6)
+        trackHeight = dp(4)
+        thumbRadius = dp(8)
         haloRadius = dp(16)
         contentDescription = "播放进度"
     }
@@ -140,19 +203,21 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     private val timeDuration = label("0:00", 12f).apply { id = R.id.home_time_duration }
     private val previous = iconButton(R.drawable.ic_home_previous, "上一首").apply {
         id = R.id.home_previous
-        iconSize = dp(30)
+        iconSize = dp(24)
+        cornerRadius = dp(24)
         setOnClickListener { actions?.skipPrev() }
     }
     private val play = iconButton(R.drawable.ic_home_play, "播放").apply {
         id = R.id.home_play
-        iconSize = dp(26)
-        cornerRadius = dp(28)
-        strokeWidth = dp(1)
+        iconSize = dp(28)
+        cornerRadius = dp(32)
+        strokeWidth = 0
         setOnClickListener { actions?.togglePlay() }
     }
     private val next = iconButton(R.drawable.ic_home_next, "下一首").apply {
         id = R.id.home_next
-        iconSize = dp(30)
+        iconSize = dp(24)
+        cornerRadius = dp(24)
         setOnClickListener { actions?.skipNext() }
     }
     private val frame = object : Runnable {
@@ -165,46 +230,54 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
 
     init {
         orientation = VERTICAL
+        clipChildren = false
+        clipToPadding = false
+        addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(72)))
         stage.addView(scroll, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         scroll.addView(lyricsTrack, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        stage.addView(empty, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        stage.addView(interlude, FrameLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(26) })
-        stage.addView(topFade, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(46), Gravity.TOP))
-        stage.addView(bottomFade, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(46), Gravity.BOTTOM))
+        emptyIconTile.addView(emptyIcon, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        emptyPanel.addView(emptyIconTile, LayoutParams(dp(72), dp(72)))
+        emptyPanel.addView(empty, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(20) })
+        emptyPanel.addView(emptyDetail, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
+        stage.addView(emptyPanel, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        stage.addView(interlude, FrameLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(28) })
+        stage.addView(topFade, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40), Gravity.TOP))
+        stage.addView(bottomFade, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40), Gravity.BOTTOM))
         addView(stage, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-        addView(divider, LayoutParams(LayoutParams.MATCH_PARENT, dp(1)))
 
         val bar = LinearLayout(context).apply {
             orientation = VERTICAL
-            setPadding(dp(22), dp(14), dp(22), dp(18))
+            setPadding(dp(16), dp(8), dp(16), dp(20))
         }
+        val utilities = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
+        utilities.addView(playbackStatus, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+        utilities.addView(View(context), LayoutParams(0, 0, 1f))
+        utilities.addView(overlay, LayoutParams(dp(48), dp(48)))
+        utilities.addView(more, LayoutParams(dp(48), dp(48)))
+        bar.addView(utilities, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)))
+
+        coverTile.addView(cover, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         val metadata = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
-        metadata.addView(cover, LayoutParams(dp(50), dp(50)))
+        metadata.addView(coverTile, LayoutParams(dp(60), dp(60)))
         val text = LinearLayout(context).apply { orientation = VERTICAL }
         text.addView(song, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        text.addView(artist, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(2) })
-        metadata.addView(text, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(13) })
-        metadata.addView(overlay, LayoutParams(dp(48), dp(48)))
-        metadata.addView(more, LayoutParams(dp(48), dp(48)).apply { rightMargin = -dp(8) })
-        bar.addView(metadata, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        text.addView(artist, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
+        metadata.addView(text, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(14) })
+        bar.addView(metadata, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
         bar.addView(progress, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)))
-        val times = LinearLayout(context)
+        val times = LinearLayout(context).apply { setPadding(dp(4), 0, dp(4), 0) }
         times.addView(timeCurrent, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
         times.addView(timeDuration, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         bar.addView(times)
         val transport = LinearLayout(context).apply { gravity = Gravity.CENTER }
         transport.addView(previous, LayoutParams(dp(48), dp(48)))
-        transport.addView(play, LayoutParams(dp(56), dp(56)).apply { leftMargin = dp(24); rightMargin = dp(24) })
+        transport.addView(play, LayoutParams(dp(88), dp(64)).apply { marginStart = dp(20); marginEnd = dp(20) })
         transport.addView(next, LayoutParams(dp(48), dp(48)))
-        bar.addView(transport, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(14) })
-        addView(bar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-
-        stage.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
-            if (bottom - top != oldBottom - oldTop) {
-                lyricsTrack.setPadding(dp(26), ((bottom - top) * .42f).toInt(), dp(26), ((bottom - top) * .58f).toInt())
-                activeIndex = -2
-            }
-        }
+        bar.addView(transport, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
+        playerCard.addView(bar, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(playerCard, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            marginStart = dp(16); marginEnd = dp(16); topMargin = dp(8); bottomMargin = dp(16)
+        })
         scroll.setOnTouchListener { _, event ->
             if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_MOVE) {
                 scrollAnimation?.cancel()
@@ -235,6 +308,17 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         renderTransport()
     }
 
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        val top = (stage.measuredHeight * .42f).toInt()
+        val bottom = (stage.measuredHeight * .58f).toInt()
+        if (lyricsTrack.paddingTop != top || lyricsTrack.paddingBottom != bottom) {
+            lyricsTrack.setPadding(dp(28), top, dp(28), bottom)
+            activeIndex = -2
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        }
+    }
+
     fun setSnapshot(value: Snapshot, forcePosition: Boolean = false) {
         snapshot = value
         clock.durationMs = value.durationMs
@@ -246,8 +330,8 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
             cover.setImageBitmap(value.cover)
         } else {
             cover.setImageResource(R.drawable.ic_home_music)
-            cover.imageTintList = ColorStateList.valueOf(color(R.color.text_tertiary))
-            cover.setPadding(dp(12), dp(12), dp(12), dp(12))
+            cover.imageTintList = ColorStateList.valueOf(color(R.color.text_secondary))
+            cover.setPadding(dp(17), dp(17), dp(17), dp(17))
         }
         if (value.track.isBlank() || forcePosition) dragging = false
         if (value.track.isBlank()) {
@@ -342,23 +426,36 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         val primary = color(R.color.text_primary)
         val secondary = color(R.color.text_secondary)
         setBackgroundColor(color(R.color.app_bg))
+        toolbar.setTitleTextColor(primary)
+        toolbar.setSubtitleTextColor(secondary)
+        playerCard.setCardBackgroundColor(color(R.color.app_surface))
+        playbackStatus.chipBackgroundColor = ColorStateList.valueOf(color(R.color.app_surface_container))
+        playbackStatus.setTextColor(secondary)
         song.setTextColor(primary)
         artist.setTextColor(secondary)
-        empty.setTextColor(secondary)
+        empty.setTextColor(primary)
+        emptyDetail.setTextColor(secondary)
+        emptyIconTile.setCardBackgroundColor(color(R.color.app_surface_container))
+        emptyIcon.imageTintList = ColorStateList.valueOf(secondary)
         interlude.setTextColor(primary)
         timeCurrent.setTextColor(secondary)
         timeDuration.setTextColor(secondary)
-        divider.setBackgroundColor(color(R.color.app_line_soft))
-        cover.setBackgroundColor(color(R.color.app_line_soft))
-        cover.strokeColor = ColorStateList.valueOf(color(R.color.app_line))
-        if (snapshot.cover == null) cover.imageTintList = ColorStateList.valueOf(color(R.color.text_tertiary))
+        coverTile.setCardBackgroundColor(color(R.color.app_surface_container))
+        cover.setBackgroundColor(Color.TRANSPARENT)
+        if (snapshot.cover == null) cover.imageTintList = ColorStateList.valueOf(secondary)
         val iconColors = ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
             intArrayOf(ColorUtils.setAlphaComponent(primary, 72), primary))
         listOf(overlay, more, previous, play, next).forEach {
             it.iconTint = iconColors
             it.rippleColor = ColorStateList.valueOf(ColorUtils.setAlphaComponent(primary, 31))
         }
-        play.strokeColor = ColorStateList.valueOf(color(R.color.app_line))
+        listOf(previous, next).forEach {
+            it.backgroundTintList = ColorStateList.valueOf(color(R.color.app_surface_container))
+        }
+        val states = arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf())
+        play.backgroundTintList = ColorStateList(states, intArrayOf(color(R.color.app_surface_container), color(R.color.accent)))
+        play.iconTint = ColorStateList(states, intArrayOf(color(R.color.text_tertiary), color(R.color.text_on_accent)))
+        play.rippleColor = ColorStateList.valueOf(ColorUtils.setAlphaComponent(color(R.color.text_on_accent), 48))
         progress.thumbTintList = ColorStateList.valueOf(primary)
         progress.trackActiveTintList = ColorStateList.valueOf(primary)
         progress.trackInactiveTintList = ColorStateList.valueOf(color(R.color.control_track))
@@ -382,11 +479,21 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         play.isEnabled = hasTrack
         play.setIconResource(if (clock.playing) R.drawable.ic_home_pause else R.drawable.ic_home_play)
         play.contentDescription = if (clock.playing) "暂停" else "播放"
+        playbackStatus.text = when {
+            !hasTrack -> "等待播放"
+            clock.playing -> "正在播放"
+            else -> "已暂停"
+        }
         progress.isEnabled = hasTrack && snapshot.durationMs > 0L
     }
 
     private fun renderEmpty() {
-        empty.visibility = if (document.lines.isEmpty()) VISIBLE else GONE
+        emptyPanel.visibility = if (document.lines.isEmpty()) VISIBLE else GONE
+        emptyDetail.text = when {
+            snapshot.track.isBlank() -> "先在音乐应用中播放一首歌"
+            lyricStatus == "empty" -> "可以在「更多」中指定自定义歌词"
+            else -> "获取完成后会自动显示"
+        }
         empty.text = when {
             snapshot.track.isBlank() -> "未在播放"
             lyricStatus == "empty" -> "找不到歌词"
@@ -404,11 +511,15 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         val position = clock.positionMs() + lyricOffsetMs
         document.lines.forEach { line ->
             val row = LyricLineView(context).apply {
-                textSize = 27f
-                typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                textSize = 30f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                isSingleLine = false
+                setHorizontallyScrolling(false)
+                maxLines = Int.MAX_VALUE
+                ellipsize = null
                 setTextColor(color(R.color.text_primary))
-                setPadding(0, dp(11), 0, dp(11))
-                setLineSpacing(0f, 1.18f)
+                setPaddingRelative(0, dp(12), 0, dp(12))
+                setLineSpacing(0f, 1.2f)
                 bind(line, translationMode)
                 setPlaybackPosition(position)
                 if (document.timed) {
@@ -513,32 +624,59 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     private fun showMore() {
         menu?.dismiss()
         val dialog = BottomSheetDialog(context)
-        val content = LinearLayout(context).apply {
+        val content = LinearLayout(dialog.context).apply {
+            id = R.id.home_more_sheet
             orientation = VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(24))
+            setPadding(dp(20), 0, dp(20), dp(20))
         }
-        fun action(title: String, callback: () -> Unit) {
-            content.addView(MaterialButton(context).apply {
+        content.addView(BottomSheetDragHandleView(dialog.context), LayoutParams(LayoutParams.MATCH_PARENT, dp(48)))
+        content.addView(label("更多", 24f).apply {
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(color(R.color.text_primary))
+        })
+        content.addView(label(snapshot.track.ifBlank { "歌词与显示设置" }, 13f).apply {
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            setTextColor(color(R.color.text_secondary))
+        }, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6); bottomMargin = dp(16) })
+        fun action(title: String, icon: Int, viewId: Int = View.NO_ID, callback: () -> Unit) {
+            content.addView(MaterialButton(dialog.context).apply {
+                id = viewId
                 text = title
+                textSize = 14f
                 isAllCaps = false
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
-                backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+                setIconResource(icon)
+                iconSize = dp(22)
+                iconPadding = dp(12)
+                iconGravity = MaterialButton.ICON_GRAVITY_START
+                iconTint = ColorStateList.valueOf(color(R.color.text_primary))
+                backgroundTintList = ColorStateList.valueOf(color(R.color.app_surface_container))
                 setTextColor(color(R.color.text_primary))
+                setPaddingRelative(dp(16), dp(10), dp(16), dp(10))
                 strokeWidth = 0
-                minHeight = dp(52)
-                cornerRadius = dp(12)
+                minHeight = dp(56)
+                cornerRadius = dp(16)
                 setOnClickListener { dialog.dismiss(); callback() }
-            }, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+            }, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
         }
-        action(if (custom) "编辑这首歌的自定义歌词" else if (snapshot.track.isBlank()) "添加自定义 LRC 歌词" else "为这首歌指定 LRC 歌词") { actions?.editCustomLyrics() }
-        action("管理自定义歌词") { actions?.manageCustomLyrics() }
-        content.addView(View(context).apply { setBackgroundColor(color(R.color.app_line_soft)) }, LayoutParams(LayoutParams.MATCH_PARENT, dp(1)))
-        action("设置") { actions?.openSettings() }
-        action("取消") { }
+        action(if (custom) "编辑这首歌的自定义歌词" else "指定 LRC 歌词", R.drawable.ic_home_edit) { actions?.editCustomLyrics() }
+        action("管理自定义歌词", R.drawable.ic_home_library) { actions?.manageCustomLyrics() }
+        action("设置", R.drawable.ic_home_settings, R.id.home_more_settings) { actions?.openSettings() }
+        content.addView(MaterialDivider(dialog.context).apply { dividerColor = color(R.color.app_line_soft) },
+            LayoutParams(LayoutParams.MATCH_PARENT, dp(1)).apply { topMargin = dp(8) })
+        content.addView(MaterialButton(dialog.context).apply {
+            text = "取消"
+            backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+            strokeWidth = 0
+            setTextColor(color(R.color.text_secondary))
+            setOnClickListener { dialog.dismiss() }
+        }, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(8) })
         dialog.setContentView(content)
         dialog.setOnDismissListener { if (menu === dialog) menu = null }
         menu = dialog
         dialog.show()
+        dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
     }
 
     private fun iconButton(iconRes: Int, description: String) = MaterialButton(context).apply {
