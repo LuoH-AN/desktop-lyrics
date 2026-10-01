@@ -1,30 +1,26 @@
 package com.luoh.music.lrc
 
-import android.app.Dialog
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
-import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.widget.NestedScrollView
+import androidx.appcompat.widget.Toolbar
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
@@ -56,96 +52,43 @@ class CustomLyricsEditActivity : AppCompatActivity() {
             ?: CustomLyricsStore.find(this, requestedTitle, requestedArtist)
         editingId = existing?.id
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundResource(R.drawable.bg_main_screen)
+        val root = NativeUi.column(this, 0).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, -1)
+            setBackgroundColor(col(R.color.app_bg))
         }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(12), dp(16), dp(6))
-        }
-        header.addView(TextView(this).apply {
-            text = if (existing == null) "‹  添加自定义歌词" else "‹  编辑自定义歌词"
-            textSize = 21f
-            setTextColor(col(R.color.text_primary))
-            setPadding(dp(2), dp(8), 0, dp(8))
-            setOnClickListener { leave() }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(TextView(this).apply {
-            text = "保存"
-            textSize = 15f
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            gravity = Gravity.CENTER
-            setTextColor(col(R.color.text_on_accent))
-            setBackgroundResource(R.drawable.bg_flat_button)
-            setPadding(dp(18), 0, dp(18), 0)
-            setOnClickListener { save() }
-        }, LinearLayout.LayoutParams(-2, dp(38)))
-        root.addView(header)
-
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), 0, dp(20), dp(32))
-        }
-        root.addView(ScrollView(this).apply {
+        val toolbar = NativeUi.toolbar(this, if (existing == null) "添加自定义歌词" else "编辑自定义歌词") { leave() }
+        toolbar.addView(NativeUi.button(this, "保存", true) { save() }, Toolbar.LayoutParams(-2, dp(48), Gravity.END))
+        root.addView(toolbar)
+        val content = NativeUi.column(this, 20)
+        root.addView(NestedScrollView(this).apply {
             isFillViewport = true
             overScrollMode = View.OVER_SCROLL_NEVER
             addView(content)
         }, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+        content.addView(text("保存后，这首歌在主页和悬浮窗都直接使用这份歌词，不再联网搜索；删除即恢复自动匹配。", 12f))
 
-        content.addView(text("保存后，这首歌在主页和悬浮窗都直接使用这份歌词，不再联网搜索；删除即恢复自动匹配。", 12f).apply {
-            setTextColor(col(R.color.text_tertiary))
-            setPadding(dp(2), 0, 0, dp(4))
+        val info = NativeUi.column(this)
+        info.addView(NativeUi.field(this, "歌名（必填）", existing?.title ?: requestedTitle).also { titleField = it.editText!! })
+        info.addView(NativeUi.field(this, "歌手（留空匹配所有同名歌曲）", existing?.artist ?: requestedArtist).also { artistField = it.editText!! })
+        content.addView(NativeUi.card(this).apply { addView(info) })
+
+        content.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(button("导入 .lrc 文件") { importLauncher.launch(arrayOf("*/*")) },
+                LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(5); topMargin = dp(12) })
+            addView(button("粘贴剪贴板") { pasteClipboard() },
+                LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(5); topMargin = dp(12) })
         })
-
-        val info = card()
-        info.addView(text("歌名", 13f))
-        titleField = field("必填，与播放器显示的歌名一致").apply { setText(existing?.title ?: requestedTitle) }
-        info.addView(titleField)
-        info.addView(text("歌手", 13f).apply { setPadding(0, dp(12), 0, 0) })
-        artistField = field("留空则所有同名歌曲都使用这份歌词").apply { setText(existing?.artist ?: requestedArtist) }
-        info.addView(artistField)
-        content.addView(info)
-
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        actions.addView(button("导入 .lrc 文件") { importLauncher.launch(arrayOf("*/*")) },
-            LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(5); topMargin = dp(12) })
-        actions.addView(button("粘贴剪贴板") { pasteClipboard() },
-            LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(5); topMargin = dp(12) })
-        content.addView(actions)
-
-        lyricsField = EditText(this).apply {
-            hint = "[00:12.30]第一句歌词\n[00:16.85]第二句歌词\n[00:16.85]同一时间戳的第二行作为译文"
-            textSize = 13f
-            typeface = Typeface.MONOSPACE
-            setTextColor(col(R.color.text_primary))
-            setHintTextColor(col(R.color.text_tertiary))
-            gravity = Gravity.TOP or Gravity.START
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            minLines = 12
-            setHorizontallyScrolling(false)
-            setBackgroundResource(R.drawable.bg_ui_input)
-            setText(existing?.lyrics.orEmpty())
-        }
-        content.addView(lyricsField, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
-
+        content.addView(NativeUi.field(this, "LRC 时间轴歌词", existing?.lyrics.orEmpty(), true).also {
+            lyricsField = it.editText!!
+            lyricsField.typeface = Typeface.MONOSPACE
+            it.placeholderText = "[00:12.30]第一句歌词\n[00:16.85]第二句歌词\n[00:16.85]同一时间戳的第二行作为译文"
+        })
         status = text("", 13f).apply { setPadding(dp(2), dp(10), 0, 0) }
         content.addView(status)
-        content.addView(text(
-            "格式：每行以 [分:秒.毫秒] 开头，例如 [01:23.45]歌词。同一时间戳写两行时，第二行作为译文显示；支持 [offset:毫秒] 整体偏移。",
-            12f
-        ).apply {
-            setTextColor(col(R.color.text_tertiary))
-            setPadding(dp(2), dp(6), 0, 0)
-        })
-        if (existing != null) {
-            content.addView(button("删除这份自定义歌词") { confirmDelete(existing) }.apply {
-                (layoutParams as LinearLayout.LayoutParams).topMargin = dp(20)
-            })
-        }
+        content.addView(text("格式：每行以 [分:秒.毫秒] 开头，例如 [01:23.45]歌词。同一时间戳写两行时，第二行作为译文显示；支持 [offset:毫秒] 整体偏移。", 12f))
+        if (existing != null) content.addView(button("删除这份自定义歌词") { confirmDelete(existing) })
 
         lyricsField.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -295,70 +238,12 @@ class CustomLyricsEditActivity : AppCompatActivity() {
     }
 
     private fun confirm(title: String, message: String, action: String, onConfirm: () -> Unit) {
-        val dialog = Dialog(this)
-        val panel = card().apply {
-            addView(text(title, 19f).apply { setTextColor(col(R.color.text_primary)) })
-            addView(text(message, 12f).apply { setPadding(0, dp(4), 0, dp(8)) })
-            addView(button(action) { dialog.dismiss(); onConfirm() }.apply {
-                setBackgroundResource(R.drawable.bg_flat_button)
-                setTextColor(col(R.color.text_on_accent))
-            })
-            addView(button("取消") { dialog.dismiss() })
-        }
-        dialog.setContentView(panel)
-        dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setDimAmount(.55f)
-            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        }
-        dialog.show()
-        dialog.window?.attributes = dialog.window?.attributes?.apply {
-            width = resources.displayMetrics.widthPixels - dp(36)
-        }
+        NativeUi.confirm(this, title, message, action, onConfirm)
     }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-
-    private fun text(value: String, size: Float) = TextView(this).apply {
-        text = value
-        textSize = size
-        setTextColor(col(R.color.text_secondary))
-    }
-
-    private fun field(hintText: String) = EditText(this).apply {
-        hint = hintText
-        textSize = 15f
-        isSingleLine = true
-        setTextColor(col(R.color.text_primary))
-        setHintTextColor(col(R.color.text_tertiary))
-        setBackgroundResource(R.drawable.bg_ui_input)
-        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) }
-    }
-
-    private fun card() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(18), dp(14), dp(18), dp(16))
-        setBackgroundResource(R.drawable.bg_ui_card)
-        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
-    }
-
-    private fun button(value: String, action: () -> Unit) = Button(this).apply {
-        text = value
-        isAllCaps = false
-        setTextColor(col(R.color.text_primary))
-        setBackgroundResource(R.drawable.bg_ui_pill)
-        stateListAnimator = null
-        layoutParams = LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) }
-        setOnClickListener { action() }
-        setOnTouchListener { view, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> view.animate().scaleX(.975f).scaleY(.975f).alpha(.86f).setDuration(80).start()
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
-                    view.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(150).start()
-            }
-            false
-        }
-    }
+    private fun text(value: String, size: Float) = NativeUi.text(this, value, size)
+    private fun button(value: String, action: () -> Unit) = NativeUi.button(this, value, action = action)
 
     companion object {
         private const val EXTRA_ID = "custom_lyrics_id"

@@ -1,6 +1,5 @@
 package com.luoh.music.lrc
 
-import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
@@ -17,11 +16,9 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
-import android.webkit.JavascriptInterface
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.widget.Button
-import android.widget.TextView
+import android.graphics.Bitmap
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.textview.MaterialTextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -33,19 +30,14 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
- * 主页 = 全屏 Apple Music 风格歌词页。
- * WebView 加载 home_lyrics.html，本 Activity 负责：
- *   - 读取当前 MediaSession（标题/歌手/封面/进度）
- *   - 用 DirectLyricsRepository 拉歌词并喂给页面
- *   - 底部 ⋯ / 权限浮层的“设置”入口进入 SettingsActivity
- *   - 应用主题（跟随/亮/暗）
- * 悬浮窗仍由 LyricsOverlayService 负责，本页只做“播放器歌词页”。
+ * Native Material home page. This activity owns MediaSession, lyric retrieval/cache and permissions;
+ * HomeLyricsView owns the native player controls, timed lyric rendering and more menu.
  */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var web: WebView
+    private lateinit var home: HomeLyricsView
     private lateinit var gate: View
-    private lateinit var gateStatus: TextView
+    private lateinit var gateStatus: MaterialTextView
     private val overlayStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) = updateOverlayState()
     }
@@ -68,7 +60,6 @@ class MainActivity : AppCompatActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioScope = CoroutineScope(Dispatchers.IO + Job())
 
-    private var webReady = false
     private var controller: MediaController? = null
     private var lastTrackKey = ""
     @Volatile private var lyricRequestId = 0
@@ -107,38 +98,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         // 主题先于 setContentView
         ThemePrefs.apply(appPrefs.getString(ThemePrefs.KEY, ThemePrefs.FOLLOW))
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        web = findViewById(R.id.lyric_web)
+        home = findViewById(R.id.lyric_home)
+        home.actions = HomeActions()
         gate = findViewById(R.id.gate_overlay)
         gateStatus = findViewById(R.id.gate_status)
 
-        web.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-        }
-        web.setBackgroundColor(0)
-        web.addJavascriptInterface(HomeBridge(), "LyricHomeNative")
-        web.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                webReady = true
-                applyThemeToWeb()
-                updateOverlayState()
-                pushSnapshot()
-            }
-        }
-        web.loadUrl("file:///android_asset/home_lyrics.html")
-
         // 权限浮层按钮
-        findViewById<Button>(R.id.gate_listener).setOnClickListener {
+        findViewById<MaterialButton>(R.id.gate_listener).setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
-        findViewById<Button>(R.id.gate_overlay_perm).setOnClickListener {
+        findViewById<MaterialButton>(R.id.gate_overlay_perm).setOnClickListener {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 startActivity(
                     Intent(
@@ -148,8 +123,8 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
-        findViewById<Button>(R.id.gate_start).setOnClickListener { tryStartOverlay() }
-        findViewById<TextView>(R.id.gate_settings_link).setOnClickListener { openSettings() }
+        findViewById<MaterialButton>(R.id.gate_start).setOnClickListener { tryStartOverlay() }
+        findViewById<MaterialButton>(R.id.gate_settings_link).setOnClickListener { openSettings() }
     }
 
     override fun onStart() {
@@ -167,40 +142,26 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        web.onResume()
         ThemePrefs.apply(appPrefs.getString(ThemePrefs.KEY, ThemePrefs.FOLLOW))
+        home.applyTheme()
+        home.setActive(true)
         updateGate()
         startSessionMonitor()
         mainHandler.post(progressTick)
-        if (webReady) {
-            applyThemeToWeb()
-            // 恢复页面的 rAF/动画（onPause 时用 setActive(false) 停掉，避免 pauseTimers 影响悬浮窗）
-            evalJs("window.LyricHome && window.LyricHome.setActive(true);")
-            pushSnapshot()
-            refreshLyricsSettings()
-        }
+        pushSnapshot()
+        refreshLyricsSettings()
     }
 
     override fun onPause() {
         mainHandler.removeCallbacks(progressTick)
         stopSessionMonitor()
-        web.onPause()
-        // 用 JS 停掉本页 rAF/定时器释放 CPU；不能用 web.pauseTimers()——它是进程级的，会连带把
-        // 悬浮窗 WebService 的 WebView 一起冻住，导致悬浮窗歌词停更。
-        evalJs("window.LyricHome && window.LyricHome.setActive(false);")
+        home.setActive(false)
         super.onPause()
     }
 
     override fun onDestroy() {
         ioScope.coroutineContext[Job]?.cancel()
         super.onDestroy()
-    }
-
-    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-        super.onConfigurationChanged(newConfig)
-        // 声明了 android:configChanges="uiMode"，亮暗切换不再重建 Activity，
-        // 手动把新主题喂给 WebView，消除重建带来的卡顿/闪烁。
-        if (webReady) applyThemeToWeb()
     }
 
     // ---------- 权限浮层 ----------
@@ -211,7 +172,7 @@ class MainActivity : AppCompatActivity() {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)
 
     private fun updateOverlayState() {
-        evalJs("window.LyricHome && window.LyricHome.setOverlayState(${LyricsOverlayService.isRunning});")
+        home.setOverlayState(LyricsOverlayService.isRunning)
     }
 
     private fun updateGate() {
@@ -253,9 +214,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSettings() {
-        // 转场前先静默 WebView，避免全屏歌词的合成层在切页动画那几帧继续烧 GPU 造成卡顿。
-        // 用 setActive(false) 而非 pauseTimers()，后者是进程级的会连带冻住悬浮窗。
-        if (webReady) { web.onPause(); evalJs("window.LyricHome && window.LyricHome.setActive(false);") }
+        home.setActive(false)
         startActivity(Intent(this, SettingsActivity::class.java))
     }
 
@@ -347,11 +306,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun pushSnapshot() {
-        if (!webReady) return
         val c = controller
         if (c == null) {
             clearTrackState()
-            evalJs("window.LyricHome && window.LyricHome.setSnapshot(${jsonStr(JSONObject().put("track", "").toString())});")
+            home.setSnapshot(HomeLyricsView.Snapshot())
             return
         }
         val md = c.metadata
@@ -383,25 +341,16 @@ class MainActivity : AppCompatActivity() {
         }
         firstSnapshotSinceMonitor = false
 
-        val stateStr = when (pb?.state) {
-            PlaybackState.STATE_PLAYING -> "playing"
-            PlaybackState.STATE_PAUSED -> "paused"
-            else -> "paused"
-        }
-        val cover = coverDataUrl(md)
+        val playing = pb?.state == PlaybackState.STATE_PLAYING
+        val cover = coverBitmap(md)
         val actions = pb?.actions ?: 0L
         val canPrev = actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS != 0L
         val canNext = actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L
-        val snapshot = JSONObject()
-            .put("track", title)
-            .put("artist", artist)
-            .put("cover", cover)
-            .put("positionMs", positionOf(pb, duration))
-            .put("durationMs", duration.coerceAtLeast(0L))
-            .put("state", stateStr)
-            .put("canPrev", canPrev)
-            .put("canNext", canNext)
-        evalJs("window.LyricHome && window.LyricHome.setSnapshot(${jsonStr(snapshot.toString())});")
+        home.setSnapshot(
+            HomeLyricsView.Snapshot(title, artist, cover, positionOf(pb, duration),
+                duration.coerceAtLeast(0L), playing, pb?.playbackSpeed ?: 1f, canPrev, canNext),
+            forcePosition = trackChanged
+        )
 
         // 换歌 → 拉歌词
         if (trackChanged) {
@@ -410,39 +359,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun pushProgressOnly() {
-        if (!webReady) return
         val c = controller ?: return
         val pb = c.playbackState ?: return
         val duration = c.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
         val playing = pb.state == PlaybackState.STATE_PLAYING
-        evalJs("window.LyricHome && window.LyricHome.setProgress(${positionOf(pb, duration)}, $playing);")
+        home.setProgress(positionOf(pb, duration), playing, pb.playbackSpeed)
     }
 
-    private var coverCacheKey = ""
-    private var coverCacheUrl = ""
-    private fun coverDataUrl(md: MediaMetadata?): String {
-        val key = firstString(md, MediaMetadata.METADATA_KEY_TITLE) + "|" +
-            firstString(md, MediaMetadata.METADATA_KEY_ARTIST)
-        if (key == coverCacheKey && coverCacheUrl.isNotEmpty()) return coverCacheUrl
-        val bmp = md?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+    private fun coverBitmap(md: MediaMetadata?): Bitmap? =
+        md?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
             ?: md?.getBitmap(MediaMetadata.METADATA_KEY_ART)
             ?: md?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
-            ?: return ""
-        val out = java.io.ByteArrayOutputStream()
-        val maxSide = maxOf(bmp.width, bmp.height)
-        val scaled = if (maxSide > 400) {
-            val r = 400f / maxSide
-            android.graphics.Bitmap.createScaledBitmap(
-                bmp, (bmp.width * r).toInt().coerceAtLeast(1), (bmp.height * r).toInt().coerceAtLeast(1), true
-            )
-        } else bmp
-        scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
-        if (scaled !== bmp) scaled.recycle()
-        coverCacheKey = key
-        coverCacheUrl = "data:image/jpeg;base64," +
-            android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
-        return coverCacheUrl
-    }
 
     // ---------- 歌词拉取（自定义 → 本地缓存 → 联网） ----------
     private val lyricCachePrefs by lazy {
@@ -496,15 +423,11 @@ class MainActivity : AppCompatActivity() {
         currentLyricArtist = currentArtist
         currentLyricIdentity = "$currentTrack\u0000$currentArtist".trim().lowercase(java.util.Locale.ROOT)
         if (payload.isBlank) {
-            evalJs("window.LyricHome && window.LyricHome.setLyrics([]);")
+            home.setLyrics(LyricDocument(emptyList(), true))
             return
         }
         val custom = payload.source == CustomLyricsStore.SOURCE
-        evalJs(
-            "window.LyricHome && window.LyricHome.setLyricsFromLrc(" +
-                "${jsonStr(payload.lyrics)},${jsonStr(payload.translated)},${jsonStr(payload.word)}," +
-                "${jsonStr(payload.source)},$custom);"
-        )
+        home.setLyrics(LyricParser.parse(payload.lyrics, payload.translated, payload.word), custom)
         applyLyricOffset()
     }
 
@@ -517,7 +440,7 @@ class MainActivity : AppCompatActivity() {
         val key = LyricsOverlayService.lyricOffsetPreferenceKey(currentLyricIdentity, currentLyricSource)
         val offset = overlayPrefs.getInt(key, 0)
             .coerceIn(LyricsOverlayService.LYRIC_OFFSET_MIN_MS, LyricsOverlayService.LYRIC_OFFSET_MAX_MS)
-        evalJs("window.LyricHome && window.LyricHome.setLyricOffset($offset);")
+        home.setLyricOffset(offset)
     }
 
     private fun fetchLyrics(track: String, artist: String, album: String, durationMs: Long) {
@@ -539,7 +462,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 2) 未命中才清空并联网
-        evalJs("window.LyricHome && window.LyricHome.clear();")
+        home.showLoading()
         ioScope.launch {
             val result = runCatching {
                 repository.resolveLyrics(track, artist, album, durationMs)
@@ -587,7 +510,7 @@ class MainActivity : AppCompatActivity() {
         val mode = overlayPrefs.getString(
             LyricsOverlayService.PREF_TRANSLATION_MODE, LyricsOverlayService.TRANSLATION_BILINGUAL
         ) ?: LyricsOverlayService.TRANSLATION_BILINGUAL
-        evalJs("window.LyricHome && window.LyricHome.setTranslationMode(${jsonStr(mode)});")
+        home.setTranslationMode(mode)
 
         if (currentTrack.isBlank()) return
         val local = localPayload(currentTrack, currentArtist, currentAlbum)
@@ -654,100 +577,58 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---------- 主题喂给 WebView ----------
-    private fun applyThemeToWeb() {
-        val night = (resources.configuration.uiMode and
-            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
-        evalJs("window.LyricHome && window.LyricHome.setTheme('${if (night) "dark" else "light"}');")
-    }
+    // ---------- Native player actions ----------
+    private inner class HomeActions : HomeLyricsView.Actions {
+        override fun toggleOverlay() {
+            if (LyricsOverlayService.isRunning) {
+                stopService(Intent(this@MainActivity, LyricsOverlayService::class.java))
+            } else {
+                tryStartOverlay()
+            }
+            updateOverlayState()
+        }
 
-    // ---------- JS 桥 ----------
-    inner class HomeBridge {
-        @JavascriptInterface
-        fun toggleOverlay() {
-            runOnUiThread {
-                if (LyricsOverlayService.isRunning) {
-                    stopService(Intent(this@MainActivity, LyricsOverlayService::class.java))
-                } else {
-                    tryStartOverlay()
-                }
-                updateOverlayState()
+        override fun openSettings() = this@MainActivity.openSettings()
+
+        override fun seekTo(positionMs: Long) {
+            val c = controller ?: return
+            runCatching { c.transportControls.seekTo(positionMs.coerceAtLeast(0L)) }
+            mainHandler.postDelayed({ pushSnapshot() }, 180)
+        }
+
+        override fun togglePlay() {
+            val c = controller ?: return
+            val playing = c.playbackState?.state == PlaybackState.STATE_PLAYING
+            runCatching {
+                if (playing) c.transportControls.pause() else c.transportControls.play()
+            }
+            mainHandler.postDelayed({ pushSnapshot() }, 120)
+        }
+
+        override fun skipPrev() {
+            val c = controller ?: return
+            runCatching { c.transportControls.skipToPrevious() }
+            mainHandler.postDelayed({ pushSnapshot() }, 180)
+        }
+
+        override fun skipNext() {
+            val c = controller ?: return
+            runCatching { c.transportControls.skipToNext() }
+            mainHandler.postDelayed({ pushSnapshot() }, 180)
+        }
+
+        override fun editCustomLyrics() {
+            if (currentTrack.isNotBlank()) {
+                startActivity(CustomLyricsEditActivity.intent(this@MainActivity, currentTrack, currentArtist))
+            } else {
+                manageCustomLyrics()
             }
         }
 
-        @JavascriptInterface
-        fun openMore() {
-            runOnUiThread { openSettings() }
-        }
-
-        @JavascriptInterface
-        fun seekTo(positionMs: Double) {
-            if (!positionMs.isFinite()) return
-            runOnUiThread {
-                val c = controller ?: return@runOnUiThread
-                runCatching { c.transportControls.seekTo(positionMs.toLong().coerceAtLeast(0L)) }
-                mainHandler.postDelayed({ pushSnapshot() }, 180)
-            }
-        }
-
-        @JavascriptInterface
-        fun togglePlay() {
-            runOnUiThread {
-                val c = controller ?: return@runOnUiThread
-                val playing = c.playbackState?.state == PlaybackState.STATE_PLAYING
-                runCatching {
-                    if (playing) c.transportControls.pause() else c.transportControls.play()
-                }
-                mainHandler.postDelayed({ pushSnapshot() }, 120)
-            }
-        }
-
-        @JavascriptInterface
-        fun skipPrev() {
-            runOnUiThread {
-                val c = controller ?: return@runOnUiThread
-                runCatching { c.transportControls.skipToPrevious() }
-                mainHandler.postDelayed({ pushSnapshot() }, 180)
-            }
-        }
-
-        @JavascriptInterface
-        fun skipNext() {
-            runOnUiThread {
-                val c = controller ?: return@runOnUiThread
-                runCatching { c.transportControls.skipToNext() }
-                mainHandler.postDelayed({ pushSnapshot() }, 180)
-            }
-        }
-
-        /** 为当前这首歌指定/编辑自定义 LRC 歌词；没有正在播放的歌就打开管理页手动新建。 */
-        @JavascriptInterface
-        fun editCustomLyrics() {
-            runOnUiThread {
-                if (currentTrack.isNotBlank()) {
-                    startActivity(CustomLyricsEditActivity.intent(this@MainActivity, currentTrack, currentArtist))
-                } else {
-                    startActivity(Intent(this@MainActivity, CustomLyricsManagerActivity::class.java))
-                }
-            }
-        }
-
-        /** 打开自定义歌词管理页。 */
-        @JavascriptInterface
-        fun manageCustomLyrics() {
-            runOnUiThread { startActivity(Intent(this@MainActivity, CustomLyricsManagerActivity::class.java)) }
+        override fun manageCustomLyrics() {
+            startActivity(Intent(this@MainActivity, CustomLyricsManagerActivity::class.java))
         }
     }
-
-    // ---------- helpers ----------
-    private fun evalJs(js: String) {
-        if (!webReady) return
-        web.evaluateJavascript(js, null)
-    }
-
-    /** 把字符串安全地作为 JS 字符串字面量传入。 */
-    private fun jsonStr(s: String): String = JSONObject.quote(s)
 
     companion object {
         // 切歌后的稳定窗口：这段时间内若拿到的还是旧歌残留状态，位置先按 0 处理，避免歌词抖动。

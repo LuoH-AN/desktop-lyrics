@@ -1,21 +1,22 @@
 package com.luoh.music.lrc
 
-import android.app.Dialog
 import android.content.Context
 import android.content.Intent
-import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.graphics.Color
 import android.text.Editable
 import android.text.TextWatcher
 import android.text.InputType
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.button.MaterialButtonToggleGroup
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.android.material.textfield.TextInputLayout
 import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.common.model.RemoteModelManager
 import com.google.mlkit.nl.translate.TranslateLanguage
@@ -31,18 +32,17 @@ class TranslationSettingsActivity : AppCompatActivity() {
     private lateinit var languages: LinearLayout
     private lateinit var search: EditText
     private var selectedMode = 0
-    private lateinit var modeSegments: List<TextView>
+    private lateinit var modeSegments: List<MaterialButton>
     private lateinit var apiBox: LinearLayout
     private lateinit var offlineBox: LinearLayout
     private lateinit var endpoint: EditText
     private lateinit var model: EditText
     private lateinit var key: EditText
-    private lateinit var apiProfileButton: LinearLayout
-    private lateinit var apiProfileLabel: TextView
+    private lateinit var apiProfileButton: MaterialButton
     private var currentApiProfileId = "glm"
     private lateinit var status: TextView
-    private lateinit var apiVerifyButton: Button
-    private lateinit var downloadProgress: ProgressBar
+    private lateinit var apiVerifyButton: MaterialButton
+    private lateinit var downloadProgress: LinearProgressIndicator
     private val apiExecutor = Executors.newSingleThreadExecutor()
     private val downloadTimeouts = mutableMapOf<String, Runnable>()
     private var downloaded = emptySet<String>()
@@ -63,49 +63,10 @@ class TranslationSettingsActivity : AppCompatActivity() {
         .filter { it !in setOf("en", "ja", "ko", "zh") }.sortedBy { Locale.forLanguageTag(it).getDisplayLanguage(Locale.SIMPLIFIED_CHINESE) }
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun title(code: String) = Locale.forLanguageTag(code).getDisplayLanguage(Locale.SIMPLIFIED_CHINESE) + " · $code"
-    private fun label(text: String, size: Float = 14f) = TextView(this).apply {
-        this.text = text; textSize = size; setTextColor(col(R.color.text_secondary)); setPadding(0, dp(10), 0, dp(8))
+    private fun label(text: String, size: Float = 14f) = NativeUi.text(this, text, size).apply {
+        setPadding(0, dp(10), 0, dp(8))
     }
-    private fun button(text: String, action: () -> Unit) = Button(this).apply {
-        this.text = text; isAllCaps = false; setTextColor(col(R.color.text_primary))
-        setBackgroundResource(R.drawable.bg_ui_pill)
-        stateListAnimator = null
-        setOnClickListener { action() }
-        setOnTouchListener { view, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> view.animate().scaleX(.975f).scaleY(.975f).alpha(.86f).setDuration(80).start()
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(150).start()
-            }
-            false
-        }
-        layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) }
-    }
-    private fun field(hint: String, value: String = "") = EditText(this).apply {
-        this.hint = hint; setText(value); textSize = 14f; setTextColor(col(R.color.text_primary))
-        setHintTextColor(col(R.color.text_tertiary)); isSingleLine = true
-        setBackgroundResource(R.drawable.bg_ui_input)
-        minHeight = dp(50)
-    }
-    private fun spinner(items: List<String>) = Spinner(this).apply {
-        setBackgroundResource(R.drawable.bg_ui_pill)
-        setPadding(dp(12), 0, dp(12), 0)
-        adapter = object : ArrayAdapter<String>(this@TranslationSettingsActivity, android.R.layout.simple_spinner_dropdown_item, items) {
-            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View =
-                super.getView(position, convertView, parent).apply { (this as? TextView)?.setTextColor(col(R.color.text_primary)) }
-            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View =
-                super.getDropDownView(position, convertView, parent).apply {
-                    setBackgroundColor(col(R.color.app_surface)); (this as? TextView)?.setTextColor(col(R.color.text_primary))
-                }
-        }
-    }
-    private fun card(title: String, subtitle: String = "") = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(18), dp(14), dp(18), dp(18))
-        setBackgroundResource(R.drawable.bg_ui_card)
-        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
-        addView(label(title, 19f).apply { setTextColor(col(R.color.text_primary)) })
-        if (subtitle.isNotBlank()) addView(label(subtitle, 12f).apply { setTextColor(col(R.color.text_secondary)); setPadding(0, 0, 0, dp(8)) })
-    }
+    private fun button(text: String, action: () -> Unit) = NativeUi.button(this, text, action = action)
     private fun showStatus(message: String, success: Boolean = false) {
         status.text = message
         status.setTextColor(col(R.color.text_secondary))
@@ -116,8 +77,7 @@ class TranslationSettingsActivity : AppCompatActivity() {
     }
     private fun updateModeUi(animate: Boolean) {
         modeSegments.forEachIndexed { index, view ->
-            view.setBackgroundResource(if (index == selectedMode) R.drawable.bg_ui_segment_selected else android.R.color.transparent)
-            view.setTextColor(if (index == selectedMode) col(R.color.text_on_accent) else col(R.color.text_secondary))
+            view.isChecked = index == selectedMode
         }
         val showApi = selectedMode == 2
         setPanelVisible(apiBox, showApi, animate)
@@ -171,134 +131,79 @@ class TranslationSettingsActivity : AppCompatActivity() {
         } else {
             currentApiProfileId = TranslationApiProfiles.find(this, prefs.getString("active_api_profile", null)).id
         }
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(32))
-            setBackgroundResource(R.drawable.bg_main_screen)
-        }
-        setContentView(ScrollView(this).apply {
-            isFillViewport = true
-            overScrollMode = View.OVER_SCROLL_NEVER
-            setBackgroundResource(R.drawable.bg_main_screen)
-            addView(content)
-        })
-
-        content.addView(TextView(this).apply {
-            text = "‹  补充翻译"
-            textSize = 21f
-            setTextColor(col(R.color.text_primary))
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), dp(8), 0, dp(10))
-            setOnClickListener { animate().translationX(-dp(4).toFloat()).setDuration(90).withEndAction { finish() }.start() }
-        })
-        content.addView(label("平台译文优先，只在缺少译文时补充。译文会缓存到本机。", 12f).apply {
-            setPadding(dp(2), 0, 0, dp(3)); setTextColor(col(R.color.text_tertiary))
-        })
-
-        val settingsCard = card("翻译方式", "点击对应方式立即应用；平台自带译文始终优先。")
+        val content = NativeUi.screen(this, "补充翻译")
+        content.addView(label("平台译文优先，只在缺少译文时补充。译文会缓存到本机。", 12f))
+        val settingsCard = NativeUi.column(this)
+        settingsCard.addView(label("翻译方式", 19f))
+        settingsCard.addView(label("点击对应方式立即应用；平台自带译文始终优先。", 12f))
         selectedMode = listOf("off", "offline", "api").indexOf(prefs.getString("mode", "off")).coerceAtLeast(0)
-        val segmentRail = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-            setBackgroundResource(R.drawable.bg_ui_pill)
-            layoutParams = LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(5) }
+        val segmentRail = MaterialButtonToggleGroup(this).apply {
+            isSingleSelection = true
+            isSelectionRequired = true
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
         }
         modeSegments = listOf("关闭", "离线机翻", "自定义 API").mapIndexed { index, text ->
-            TextView(this).apply {
-                this.text = text
+            NativeUi.button(this, text) { if (selectedMode != index) applyMode(index) }.apply {
+                id = View.generateViewId()
+                isCheckable = true
                 textSize = 12f
-                gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(0, -1, 1f).apply {
-                    if (index > 0) marginStart = dp(3)
-                }
-                setOnClickListener {
-                    if (selectedMode != index) {
-                        applyMode(index)
-                    }
-                }
+                setPadding(dp(4), dp(10), dp(4), dp(10))
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             }
         }
         modeSegments.forEach(segmentRail::addView)
         settingsCard.addView(segmentRail)
 
-        apiBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(8), dp(14), dp(14))
-            setBackgroundResource(R.drawable.bg_ui_panel)
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
-        }
-        apiBox.addView(label("兼容 Chat Completions 的服务", 14f).apply { setTextColor(col(R.color.text_primary)) })
-        apiProfileLabel = label("", 14f).apply { setTextColor(col(R.color.text_primary)); setPadding(0, 0, 0, 0) }
-        apiProfileButton = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(18), 0, dp(14), 0)
-            setBackgroundResource(R.drawable.bg_ui_pill)
-            layoutParams = LinearLayout.LayoutParams(-1, dp(50)).apply { bottomMargin = dp(8) }
-            addView(apiProfileLabel, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(label("⌄", 19f).apply { setTextColor(col(R.color.text_secondary)); setPadding(dp(8), 0, 0, dp(4)) })
-            setOnClickListener { showApiProfileMenu() }
-            setOnTouchListener { view, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> view.animate().scaleX(.985f).scaleY(.985f).alpha(.88f).setDuration(80).start()
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(140).start()
-                }
-                false
-            }
-        }
+        apiBox = NativeUi.column(this, 0)
+        apiBox.addView(label("兼容 Chat Completions 的服务", 14f))
+        apiProfileButton = button("") { showApiProfileMenu() }
         apiBox.addView(apiProfileButton)
-        endpoint = field("HTTPS 服务地址，例如 …/v1")
-        model = field("模型名称")
-        key = field("API Key").apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        apiBox.addView(endpoint); apiBox.addView(model); apiBox.addView(key)
+        apiBox.addView(NativeUi.field(this, "HTTPS 服务地址").also { endpoint = it.editText!! })
+        apiBox.addView(NativeUi.field(this, "模型名称").also { model = it.editText!! })
+        apiBox.addView(NativeUi.field(this, "API Key").also {
+            key = it.editText!!
+            key.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            it.endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
+        })
         apiBox.addView(label("可随时切换服务；每套地址、模型和密钥独立保存。缺少译文的歌词才会发送，密钥加密保存在本机。", 11f))
         apiBox.addView(button("删除已保存的密钥") {
-            SecretStorage(this, currentApiProfileId).save(""); key.setText(""); key.hint = "API Key"
-            showStatus("已删除当前服务保存的 API Key", true)
+            NativeUi.confirm(this, "删除已保存的密钥？", "只删除当前 API 配置的本机密钥，地址和模型仍会保留。", "删除密钥") {
+                SecretStorage(this, currentApiProfileId).save("")
+                key.setText("")
+                showStatus("已删除当前服务保存的 API Key", true)
+            }
         })
-        apiVerifyButton = button("确认配置并验证连通性") { confirmApi() }.apply {
-            setBackgroundResource(R.drawable.bg_ui_primary_button)
-            setTextColor(col(R.color.text_on_accent))
-        }
+        apiVerifyButton = NativeUi.button(this, "确认配置并验证连通性", true) { confirmApi() }
         apiBox.addView(apiVerifyButton)
         settingsCard.addView(apiBox)
         loadApiProfile(currentApiProfileId)
 
-        offlineBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(8), dp(14), dp(14))
-            setBackgroundResource(R.drawable.bg_ui_panel)
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
-        }
-        offlineBox.addView(label("离线语言包 · 需要代理", 16f).apply { setTextColor(col(R.color.text_primary)) })
-        offlineBox.addView(label("自动识别源语言。单个模型约 30 MB；翻译成中文还需要共用中文模型。系统不提供下载百分比和速度。", 11f).apply {
-            setTextColor(col(R.color.text_tertiary))
-        })
-        downloadProgress = ProgressBar(this).apply {
+        offlineBox = NativeUi.column(this, 0)
+        offlineBox.addView(label("离线语言包 · 需要代理", 16f))
+        offlineBox.addView(label("自动识别源语言。单个模型约 30 MB；翻译成中文还需要共用中文模型。系统不提供下载百分比和速度。", 11f))
+        downloadProgress = LinearProgressIndicator(this).apply {
             isIndeterminate = true
             visibility = View.GONE
-            indeterminateTintList = android.content.res.ColorStateList.valueOf(col(R.color.control_active))
+            setIndicatorColor(col(R.color.control_active))
+            trackColor = col(R.color.control_track)
         }
         offlineBox.addView(downloadProgress, LinearLayout.LayoutParams(-1, dp(4)).apply { topMargin = dp(6) })
-        search = field("搜索更多语言，例如法语、德语、西班牙语")
-        offlineBox.addView(search, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(10) })
-        val languageActions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) }
-        }
+        offlineBox.addView(NativeUi.field(this, "搜索更多语言").also { search = it.editText!! })
+        val languageActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         languageActions.addView(button("刷新状态") {
-            downloading.clear(); downloadProgress.visibility = View.VISIBLE
-            showStatus("正在读取已下载语言包…"); refreshModels()
-        }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(5) })
+            downloading.clear()
+            downloadProgress.visibility = View.VISIBLE
+            showStatus("正在读取已下载语言包…")
+            refreshModels()
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(5); topMargin = dp(8) })
         languageActions.addView(button("清理译文缓存") {
-            File(cacheDir, "translations").listFiles()?.filter { it.isFile }?.forEach { it.delete() }
-            showStatus("补充翻译缓存已清理", true)
-        }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(5) })
+            NativeUi.confirm(this, "清理译文缓存？", "删除已缓存的补充译文，保留 API 配置与下载的语言包。", "清理缓存") {
+                File(cacheDir, "translations").listFiles()?.filter { it.isFile }?.forEach { it.delete() }
+                showStatus("补充翻译缓存已清理", true)
+            }
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(5); topMargin = dp(8) })
         offlineBox.addView(languageActions)
-        languages = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        languages = NativeUi.column(this, 0)
         offlineBox.addView(languages)
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -306,17 +211,16 @@ class TranslationSettingsActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) = Unit
         })
         settingsCard.addView(offlineBox)
-
         status = label("").apply {
             visibility = View.GONE
-            setPadding(dp(12), dp(9), dp(12), dp(9))
-            setBackgroundResource(R.drawable.bg_ui_status_badge)
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
-        settingsCard.addView(status, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
-        content.addView(settingsCard)
+        settingsCard.addView(status)
+        content.addView(NativeUi.card(this).apply { addView(settingsCard) })
         updateModeUi(false)
         refreshModels()
     }
+
     override fun onResume() {
         super.onResume()
         if (!::apiProfileButton.isInitialized) return
@@ -344,40 +248,23 @@ class TranslationSettingsActivity : AppCompatActivity() {
     }
     private fun updateApiProfileButton() {
         if (::apiProfileButton.isInitialized) {
-            apiProfileLabel.text = TranslationApiProfiles.find(this, currentApiProfileId).label
+            apiProfileButton.text = TranslationApiProfiles.find(this, currentApiProfileId).label + "  ▾"
         }
     }
     private fun showApiProfileMenu() {
-        val dialog = Dialog(this)
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(18))
-            setBackgroundResource(R.drawable.bg_ui_card)
-            addView(label("选择翻译 API", 20f).apply { setTextColor(col(R.color.text_primary)) })
-            addView(label("地址、模型和密钥会按配置分别保存。", 12f).apply {
-                setTextColor(col(R.color.text_secondary)); setPadding(0, 0, 0, dp(5))
-            })
-        }
-        TranslationApiProfiles.all(this).forEach { profile ->
-            panel.addView(button(if (profile.id == currentApiProfileId) "✓  ${profile.label}" else profile.label) {
-                dialog.dismiss(); switchApiProfile(profile)
-            })
-        }
-        panel.addView(button("＋ 添加 API   ›") {
-            dialog.dismiss(); saveApiProfileDraft()
-            startActivity(Intent(this, ApiProfileManagerActivity::class.java))
-        }.apply { setBackgroundResource(R.drawable.bg_flat_button); setTextColor(col(R.color.text_on_accent)) })
-        panel.addView(button("取消") { dialog.dismiss() })
-        dialog.setContentView(panel)
-        dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setDimAmount(.62f)
-            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        }
-        dialog.show()
-        dialog.window?.attributes = dialog.window?.attributes?.apply { width = resources.displayMetrics.widthPixels - dp(36) }
-        panel.alpha = 0f; panel.scaleX = .96f; panel.scaleY = .96f
-        panel.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(190).start()
+        val profiles = TranslationApiProfiles.all(this)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("选择翻译 API")
+            .setSingleChoiceItems(profiles.map { it.label }.toTypedArray(), profiles.indexOfFirst { it.id == currentApiProfileId }) { dialog, which ->
+                dialog.dismiss()
+                switchApiProfile(profiles[which])
+            }
+            .setNeutralButton("管理 API") { _, _ ->
+                saveApiProfileDraft()
+                startActivity(Intent(this, ApiProfileManagerActivity::class.java))
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
     private fun switchApiProfile(selected: TranslationApiProfile) {
         if (selected.id == currentApiProfileId) return
@@ -447,73 +334,24 @@ class TranslationSettingsActivity : AppCompatActivity() {
     }
     private fun needed(code: String) = setOf(code, "zh").filter { it != "en" }
     private fun showDownloadDialog(code: String) {
-        val dialog = Dialog(this)
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(18))
-            setBackgroundResource(R.drawable.bg_ui_card)
-            addView(label("下载 ${title(code)}", 20f).apply { setTextColor(col(R.color.text_primary)) })
-            addView(label("将下载该语言及缺失的共用中文模型。请先确保手机代理可用；每个模型约 30 MB。", 12f).apply {
-                setTextColor(col(R.color.text_secondary)); setPadding(0, 0, 0, dp(8))
-            })
-            addView(button("仅 Wi-Fi 下载") { dialog.dismiss(); download(code, true) }.apply {
-                setBackgroundResource(R.drawable.bg_flat_button); setTextColor(col(R.color.text_on_accent))
-            })
-            addView(button("允许当前网络") { dialog.dismiss(); download(code, false) })
-            addView(button("取消") { dialog.dismiss() })
-        }
-        dialog.setContentView(panel)
-        dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setDimAmount(.62f)
-            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            attributes = attributes.apply { width = resources.displayMetrics.widthPixels - dp(36) }
-        }
-        dialog.show()
-        dialog.window?.attributes = dialog.window?.attributes?.apply { width = resources.displayMetrics.widthPixels - dp(36) }
-        panel.alpha = 0f; panel.scaleX = .96f; panel.scaleY = .96f
-        panel.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(190).start()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("下载 ${title(code)}")
+            .setMessage("将下载该语言及缺失的共用中文模型。请先确保手机代理可用；每个模型约 30 MB。")
+            .setPositiveButton("仅 Wi-Fi 下载") { _, _ -> download(code, true) }
+            .setNeutralButton("允许当前网络") { _, _ -> download(code, false) }
+            .setNegativeButton("取消", null)
+            .show()
     }
     private fun showDeleteDialog(code: String, removable: String) {
-        val dialog = Dialog(this)
         val message = if (removable == "zh") {
             "删除共用中文模型后，所有离线中文翻译都需要重新下载。已缓存译文仍会保留。"
-        } else {
-            "删除 ${title(code)} 语言包？已缓存译文仍会保留。"
+        } else "删除 ${title(code)} 语言包？已缓存译文仍会保留。"
+        NativeUi.confirm(this, "删除语言包", message, "确认删除") {
+            showStatus("正在删除语言包…")
+            manager.deleteDownloadedModel(TranslateRemoteModel.Builder(removable).build())
+                .addOnSuccessListener(this) { showStatus("语言包已删除", true); refreshModels() }
+                .addOnFailureListener(this) { showStatus("删除失败，请停止离线翻译后重试") }
         }
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(18))
-            setBackgroundResource(R.drawable.bg_ui_card)
-            addView(label("删除语言包", 20f).apply { setTextColor(col(R.color.text_primary)) })
-            addView(label(message, 12f).apply {
-                setTextColor(col(R.color.text_secondary)); setPadding(0, 0, 0, dp(8))
-            })
-            addView(button("确认删除") {
-                dialog.dismiss()
-                showStatus("正在删除语言包…")
-                manager.deleteDownloadedModel(TranslateRemoteModel.Builder(removable).build())
-                    .addOnSuccessListener(this@TranslationSettingsActivity) {
-                        showStatus("语言包已删除", true); refreshModels()
-                    }
-                    .addOnFailureListener(this@TranslationSettingsActivity) {
-                        showStatus("删除失败，请停止离线翻译后重试")
-                    }
-            }.apply { setBackgroundResource(R.drawable.bg_flat_button); setTextColor(col(R.color.text_on_accent)) })
-            addView(button("取消") { dialog.dismiss() })
-        }
-        dialog.setContentView(panel)
-        dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setDimAmount(.62f)
-            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        }
-        dialog.show()
-        dialog.window?.attributes = dialog.window?.attributes?.apply {
-            width = resources.displayMetrics.widthPixels - dp(36)
-        }
-        panel.alpha = 0f; panel.scaleX = .96f; panel.scaleY = .96f
-        panel.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(190).start()
     }
     private fun renderLanguages() {
         languages.removeAllViews()

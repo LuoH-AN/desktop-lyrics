@@ -2,20 +2,14 @@ package com.luoh.music.lrc
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.view.View
-import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.EditText
 import android.text.Editable
 import android.text.TextWatcher
-import android.graphics.Typeface
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,16 +28,9 @@ class LyricSourceManagerActivity : AppCompatActivity() {
     private fun col(res: Int) = ContextCompat.getColor(this, res)
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(28))
+        content = NativeUi.screen(this, "歌词源管理") {
+            if (selected != null) { selected = null; render() } else finish()
         }
-        setContentView(ScrollView(this).apply {
-            isFillViewport = true
-            overScrollMode = View.OVER_SCROLL_NEVER
-            setBackgroundResource(R.drawable.bg_main_screen)
-            addView(content)
-        })
         render()
     }
     private fun entries(): List<JSONObject> {
@@ -64,21 +51,14 @@ class LyricSourceManagerActivity : AppCompatActivity() {
     }
     private fun render() {
         content.removeAllViews()
-        content.addView(label("‹  歌词源管理", 25f).apply {
-            setOnClickListener { if (selected != null) { selected = null; render() } else finish() }
-        })
         content.addView(label("按歌曲整理尝试过的歌词版本，选择来源后可预览与切换。记录持续保留，可随时手动清理。", 13f))
         if (message.isNotBlank()) content.addView(label(message, 14f))
         val values = entries()
         val entry = values.find { it.optString("key") == selected }
         if (entry == null) {
-            val input = EditText(this).apply {
-                hint = "搜索已记录的歌名或歌手"; textSize = 14f
-                setTextColor(col(R.color.text_primary)); setHintTextColor(col(R.color.text_tertiary))
-                setSingleLine(true); setPadding(dp(14),dp(8),dp(14),dp(8))
-                setBackgroundResource(R.drawable.bg_ui_pill); setText(songQuery)
-            }
-            content.addView(input, LinearLayout.LayoutParams(-1,dp(50)).apply { topMargin = dp(12) })
+            val searchField = NativeUi.field(this, "搜索已记录的歌名或歌手", songQuery)
+            val input = searchField.editText!!
+            content.addView(searchField)
             val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             content.addView(list)
             content.addView(button("清除匹配记录与缓存…") { confirmClearAll() }.apply {
@@ -96,7 +76,7 @@ class LyricSourceManagerActivity : AppCompatActivity() {
                 if(groups.isEmpty()) list.addView(label(if(values.isEmpty()) "暂无重匹配记录" else "没有符合搜索条件的歌曲", 16f))
                 groups.forEach { group ->
                     val item = group.first()
-                    list.addView(card().apply {
+                    list.addView(card {
                         addView(label(item.optString("title").ifBlank { "未知歌曲" },18f))
                         addView(label(item.optString("artist"),13f))
                         group.forEach { source ->
@@ -127,7 +107,7 @@ class LyricSourceManagerActivity : AppCompatActivity() {
             content.addView(button("恢复最初的歌词") { update(key) { it.put("candidate", original).put("needsReview", false) }; message = "已恢复最初的歌词"; render() })
         }
         content.addView(button("删除记忆 / 恢复自动匹配") {
-            AlertDialog.Builder(this)
+            MaterialAlertDialogBuilder(this)
                 .setTitle("删除这首歌的来源记忆？")
                 .setMessage("将删除《${entry.optString("title")}》在 ${entry.optString("source")} 的选择及历史版本，下次搜索恢复自动匹配。")
                 .setNegativeButton("取消", null)
@@ -140,7 +120,7 @@ class LyricSourceManagerActivity : AppCompatActivity() {
         for (i in 0 until history.length()) {
             val candidate = history.optJSONObject(i) ?: continue
             val current = !entry.optBoolean("needsReview") && candidate.optString("recordId") == entry.optJSONObject("candidate")?.optString("recordId")
-            content.addView(card().apply {
+            content.addView(card {
                 addView(label((if(current) "✓ 当前选择 · " else "") + candidate.optString("title").ifBlank { entry.optString("title").ifBlank { "旧版候选" } }, 17f))
                 addView(label(candidate.optString("artist").ifBlank { entry.optString("artist") } + " · " + candidate.optString("source"), 13f))
                 val seconds = candidate.optLong("duration") / 1000
@@ -164,7 +144,7 @@ class LyricSourceManagerActivity : AppCompatActivity() {
     private fun confirmClearAll() {
         if (busy) return
         val count = entries().map { it.optString("title") + "\u0000" + it.optString("artist") }.distinct().size
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("清除匹配记录与缓存？")
             .setMessage("将清除 $count 首歌曲的匹配记录（包括手动选定的版本与历史版本），以及主页缓存的歌词。此操作无法撤销。\n\n自定义歌词、翻译语言包和同步设置都会保留。")
             .setNegativeButton("取消", null)
@@ -208,22 +188,12 @@ class LyricSourceManagerActivity : AppCompatActivity() {
         }
     }
     private fun dp(value: Int) = (resources.displayMetrics.density * value).toInt()
-    private fun label(value: String, size: Float) = TextView(this).apply {
-        text = value; textSize = size
-        setTextColor(if(size >= 17) col(R.color.text_primary) else col(R.color.text_secondary))
+    private fun label(value: String, size: Float) = NativeUi.text(this, value, size).apply {
+        setTextColor(if (size >= 17) col(R.color.text_primary) else col(R.color.text_secondary))
         setPadding(0, dp(6), 0, dp(8))
     }
-    private fun card() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL; setPadding(dp(16),dp(12),dp(16),dp(12))
-        setBackgroundResource(R.drawable.bg_ui_card)
-        layoutParams = LinearLayout.LayoutParams(-1,-2).apply { topMargin = dp(12) }
+    private fun card(block: LinearLayout.() -> Unit) = NativeUi.card(this).apply {
+        addView(NativeUi.column(this@LyricSourceManagerActivity).apply(block))
     }
-    private fun button(value: String, action: () -> Unit) = Button(this).apply {
-        text = value; isAllCaps = false; textSize = 14f; setTextColor(col(R.color.text_primary))
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        stateListAnimator = null
-        setBackgroundResource(R.drawable.bg_ui_pill)
-        layoutParams = LinearLayout.LayoutParams(-1,dp(52)).apply { topMargin = dp(8) }
-        setOnClickListener { action() }
-    }
+    private fun button(value: String, action: () -> Unit) = NativeUi.button(this, value, action = action)
 }

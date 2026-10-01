@@ -1,13 +1,12 @@
 package com.luoh.music.lrc
 
-import android.app.Dialog
 import android.content.Context
+import android.content.res.ColorStateList
 import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -15,17 +14,19 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.util.TypedValue
-import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.slider.Slider
 
 /**
  * 独立设置页（黑白灰扁平纯边框分组列表）。
@@ -42,24 +43,24 @@ class SettingsActivity : AppCompatActivity() {
 
     private lateinit var listenerState: TextView
     private lateinit var overlayState: TextView
-    private lateinit var overlayToggle: SwitchCompat
+    private lateinit var overlayToggle: MaterialSwitch
     private var updatingOverlayToggle = false
     private val overlayStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) = updatePermissionStates()
     }
-    private lateinit var themeFollow: TextView
-    private lateinit var themeLight: TextView
-    private lateinit var themeDark: TextView
-    private lateinit var backgroundModeTransparent: TextView
-    private lateinit var backgroundModeLow: TextView
-    private lateinit var backgroundModeHigh: TextView
-    private lateinit var seekFontSize: SeekBar
+    private lateinit var themeFollow: MaterialButton
+    private lateinit var themeLight: MaterialButton
+    private lateinit var themeDark: MaterialButton
+    private lateinit var backgroundModeTransparent: MaterialButton
+    private lateinit var backgroundModeLow: MaterialButton
+    private lateinit var backgroundModeHigh: MaterialButton
+    private lateinit var seekFontSize: Slider
     private lateinit var fontSizeValue: TextView
     private lateinit var lyricOffsetValue: TextView
     private lateinit var lyricOffsetScope: TextView
-    private lateinit var offsetEarlier: Button
-    private lateinit var offsetLater: Button
-    private lateinit var offsetReset: Button
+    private lateinit var offsetEarlier: MaterialButton
+    private lateinit var offsetLater: MaterialButton
+    private lateinit var offsetReset: MaterialButton
     private lateinit var overlayPreview: LinearLayout
     private var displayedOffsetMs = 0
     private val offsetPreferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -70,14 +71,14 @@ class SettingsActivity : AppCompatActivity() {
             updateLyricOffsetUi()
         }
     }
-    private lateinit var lyricColorWhite: TextView
-    private lateinit var lyricColorBlue: TextView
-    private lateinit var lyricColorBlack: TextView
-    private lateinit var lyricColorPink: TextView
-    private lateinit var lyricColorCustom: TextView
-    private lateinit var translationOriginal: TextView
-    private lateinit var translationBilingual: TextView
-    private lateinit var translationTranslated: TextView
+    private lateinit var lyricColorWhite: MaterialButton
+    private lateinit var lyricColorBlue: MaterialButton
+    private lateinit var lyricColorBlack: MaterialButton
+    private lateinit var lyricColorPink: MaterialButton
+    private lateinit var lyricColorCustom: MaterialButton
+    private lateinit var translationOriginal: MaterialButton
+    private lateinit var translationBilingual: MaterialButton
+    private lateinit var translationTranslated: MaterialButton
     private lateinit var versionValue: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,7 +92,7 @@ class SettingsActivity : AppCompatActivity() {
             animate().alpha(1f).setDuration(180L).start()
         }
 
-        findViewById<TextView>(R.id.settings_back).setOnClickListener { finish() }
+        findViewById<MaterialToolbar>(R.id.settings_toolbar).setNavigationOnClickListener { finish() }
 
         listenerState = findViewById(R.id.listener_permission_state)
         overlayState = findViewById(R.id.overlay_permission_state)
@@ -152,17 +153,14 @@ class SettingsActivity : AppCompatActivity() {
         backgroundModeHigh.setOnClickListener { setBackgroundMode(LyricsOverlayService.BACKGROUND_HIGH) }
 
         // 字号
-        seekFontSize.max = LyricsOverlayService.FONT_SCALE_MAX_PERCENT -
-            LyricsOverlayService.FONT_SCALE_MIN_PERCENT
-        seekFontSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                val percent = LyricsOverlayService.FONT_SCALE_MIN_PERCENT + progress
-                fontSizeValue.text = "$percent%"
-                if (fromUser) setFontScale(percent)
-            }
-            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
-            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
-        })
+        seekFontSize.valueFrom = LyricsOverlayService.FONT_SCALE_MIN_PERCENT.toFloat()
+        seekFontSize.valueTo = LyricsOverlayService.FONT_SCALE_MAX_PERCENT.toFloat()
+        seekFontSize.stepSize = 1f
+        seekFontSize.addOnChangeListener { _, value, fromUser ->
+            val percent = value.toInt()
+            fontSizeValue.text = "$percent%"
+            if (fromUser) setFontScale(percent)
+        }
 
         // 正偏移让歌词提前，用自然语言操作，不要求用户理解正负号。
         offsetEarlier.setOnClickListener { setLyricOffset(displayedOffsetMs + 100) }
@@ -440,7 +438,7 @@ class SettingsActivity : AppCompatActivity() {
             LyricsOverlayService.FONT_SCALE_MAX_PERCENT
         )
         fontSizeValue.text = "$percent%"
-        seekFontSize.progress = percent - LyricsOverlayService.FONT_SCALE_MIN_PERCENT
+        seekFontSize.value = percent.toFloat()
     }
 
     // ---------- 歌词同步 ----------
@@ -511,21 +509,15 @@ class SettingsActivity : AppCompatActivity() {
             lyricColorPink to "#FFB6D5"
         )
         options.forEach { (option, color) ->
-            val isSelected = color.equals(selected, ignoreCase = true)
-            option.alpha = if (isSelected) 1f else 0.65f
-            option.isSelected = isSelected
-            // 选中的圆点加个描边框（用 background ring）
-            option.background = if (isSelected) ringDrawable() else null
+            val selectedColor = color.equals(selected, ignoreCase = true)
+            option.isChecked = selectedColor
+            option.strokeWidth = NativeUi.dp(this, if (selectedColor) 2 else 1)
+            option.strokeColor = ColorStateList.valueOf(resolveColor(if (selectedColor) R.color.accent else R.color.app_line))
         }
-        val normalized = selected.uppercase(java.util.Locale.ROOT)
-        val isCustom = options.none { (_, color) -> color == normalized }
-        lyricColorCustom.background = if (isCustom) ringDrawable() else null
-    }
-
-    private fun ringDrawable(): GradientDrawable = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(Color.TRANSPARENT)
-        setStroke((resources.displayMetrics.density * 2f + .5f).toInt(), resolveColor(R.color.accent))
+        val isCustom = options.none { (_, color) -> color.equals(selected, ignoreCase = true) }
+        lyricColorCustom.isChecked = isCustom
+        lyricColorCustom.strokeWidth = NativeUi.dp(this, if (isCustom) 2 else 1)
+        lyricColorCustom.strokeColor = ColorStateList.valueOf(resolveColor(if (isCustom) R.color.accent else R.color.app_line))
     }
 
     private fun resolveColor(res: Int): Int = ContextCompat.getColor(this, res)
@@ -562,30 +554,18 @@ class SettingsActivity : AppCompatActivity() {
         )
     }
 
-    // ---------- 分段选中态：黑白灰（选中=实心 accent + on-accent 文字） ----------
-    private fun applySeg(options: List<Pair<TextView, String>>, selected: String) {
-        val onAccent = resolveColor(R.color.text_on_accent)
-        val secondary = resolveColor(R.color.text_secondary)
-        options.forEach { (option, value) ->
-            val isSelected = value == selected
-            option.isSelected = isSelected
-            option.isFocusable = true
-            option.setBackgroundResource(if (isSelected) R.drawable.bg_seg_on else android.R.color.transparent)
-            option.setTextColor(if (isSelected) onAccent else secondary)
-            option.typeface = android.graphics.Typeface.create(
-                "sans-serif",
-                if (isSelected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
-            )
-        }
+    // MaterialButtonToggleGroup owns segment shape, ripple and accessibility state.
+    private fun applySeg(options: List<Pair<MaterialButton, String>>, selected: String) {
+        options.forEach { (option, value) -> option.isChecked = value == selected }
     }
 
     // ---------- 无级调色对话框（沿用旧布局） ----------
     private fun showColorPickerDialog() {
         val picker = layoutInflater.inflate(R.layout.dialog_color_picker, null)
         val preview = picker.findViewById<TextView>(R.id.color_picker_preview)
-        val red = picker.findViewById<SeekBar>(R.id.seek_color_red)
-        val green = picker.findViewById<SeekBar>(R.id.seek_color_green)
-        val blue = picker.findViewById<SeekBar>(R.id.seek_color_blue)
+        val red = picker.findViewById<Slider>(R.id.seek_color_red)
+        val green = picker.findViewById<Slider>(R.id.seek_color_green)
+        val blue = picker.findViewById<Slider>(R.id.seek_color_blue)
         val redValue = picker.findViewById<TextView>(R.id.color_red_value)
         val greenValue = picker.findViewById<TextView>(R.id.color_green_value)
         val blueValue = picker.findViewById<TextView>(R.id.color_blue_value)
@@ -593,13 +573,13 @@ class SettingsActivity : AppCompatActivity() {
             .orEmpty().takeIf { Regex("^#[0-9A-Fa-f]{6}$").matches(it) }
             ?: LyricsOverlayService.LYRIC_COLOR_DEFAULT
         val initial = Color.parseColor(initialHex)
-        red.progress = Color.red(initial)
-        green.progress = Color.green(initial)
-        blue.progress = Color.blue(initial)
+        red.value = Color.red(initial).toFloat()
+        green.value = Color.green(initial).toFloat()
+        blue.value = Color.blue(initial).toFloat()
         var selectedHex = initialHex.uppercase(java.util.Locale.ROOT)
 
         fun updatePreview() {
-            val r = red.progress; val g = green.progress; val b = blue.progress
+            val r = red.value.toInt(); val g = green.value.toInt(); val b = blue.value.toInt()
             selectedHex = String.format(java.util.Locale.ROOT, "#%02X%02X%02X", r, g, b)
             redValue.text = r.toString(); greenValue.text = g.toString(); blueValue.text = b.toString()
             preview.text = selectedHex
@@ -612,34 +592,16 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        val listener = object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) = updatePreview()
-            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
-            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
+        listOf(red, green, blue).forEach { slider ->
+            slider.addOnChangeListener { _, _, _ -> updatePreview() }
         }
-        red.setOnSeekBarChangeListener(listener)
-        green.setOnSeekBarChangeListener(listener)
-        blue.setOnSeekBarChangeListener(listener)
         updatePreview()
-
-        val dialog = Dialog(this).apply {
-            setContentView(picker)
-            window?.apply {
-                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-                setDimAmount(.6f)
-                addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            }
-        }
-        picker.findViewById<Button>(R.id.color_picker_cancel).setOnClickListener { dialog.dismiss() }
-        picker.findViewById<Button>(R.id.color_picker_apply).setOnClickListener {
-            setLyricColor(selectedHex)
-            dialog.dismiss()
-        }
-        dialog.show()
-        dialog.window?.setLayout(
-            resources.displayMetrics.widthPixels - (36 * resources.displayMetrics.density).toInt(),
-            android.view.WindowManager.LayoutParams.WRAP_CONTENT
-        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle("歌词颜色")
+            .setView(picker)
+            .setNegativeButton("取消", null)
+            .setPositiveButton("应用") { _, _ -> setLyricColor(selectedHex) }
+            .show()
     }
 
     // ---------- 更新检查 ----------

@@ -1,22 +1,17 @@
 package com.luoh.music.lrc
 
-import android.app.Dialog
 import android.content.Context
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
-import android.view.MotionEvent
-import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.textfield.TextInputLayout
 
 class ApiProfileManagerActivity : AppCompatActivity() {
-    private fun col(res: Int) = androidx.core.content.ContextCompat.getColor(this, res)
     private val prefs by lazy { getSharedPreferences("supplement_translation", Context.MODE_PRIVATE) }
     private lateinit var name: EditText
     private lateinit var endpoint: EditText
@@ -24,84 +19,41 @@ class ApiProfileManagerActivity : AppCompatActivity() {
     private lateinit var key: EditText
     private lateinit var list: LinearLayout
     private lateinit var status: TextView
-    private lateinit var save: Button
+    private lateinit var save: MaterialButton
     private var editingId: String? = null
-
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    private fun label(value: String, size: Float = 14f) = TextView(this).apply {
-        text = value; textSize = size; setTextColor(col(R.color.text_secondary)); setPadding(0, dp(9), 0, dp(7))
-    }
-    private fun field(hintText: String) = EditText(this).apply {
-        hint = hintText; textSize = 14f; setTextColor(col(R.color.text_primary)); setHintTextColor(col(R.color.text_tertiary))
-        isSingleLine = true; minHeight = dp(50); setBackgroundResource(R.drawable.bg_ui_input)
-    }
-    private fun button(value: String, action: () -> Unit) = Button(this).apply {
-        text = value; isAllCaps = false; setTextColor(col(R.color.text_primary)); stateListAnimator = null
-        setBackgroundResource(R.drawable.bg_ui_pill); setOnClickListener { action() }
-        setOnTouchListener { view, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> view.animate().scaleX(.975f).scaleY(.975f).alpha(.86f).setDuration(80).start()
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(150).start()
-            }
-            false
-        }
-    }
-    private fun card() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(13), dp(18), dp(18))
-        setBackgroundResource(R.drawable.bg_ui_card)
-        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
-    }
-    private fun showStatus(message: String, success: Boolean = false) {
-        status.text = message
-        status.setTextColor(col(R.color.text_secondary))
-        status.alpha = 0f; status.animate().alpha(1f).setDuration(180).start()
-    }
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(12), dp(20), dp(30))
-            setBackgroundResource(R.drawable.bg_main_screen)
-        }
-        setContentView(ScrollView(this).apply {
-            isFillViewport = true; overScrollMode = ScrollView.OVER_SCROLL_NEVER
-            setBackgroundResource(R.drawable.bg_main_screen); addView(content)
+        val content = NativeUi.screen(this, "API 配置")
+        content.addView(NativeUi.text(this, "可添加多套兼容 Chat Completions 的服务，并随时切换。", 12f))
+        val editor = NativeUi.column(this)
+        editor.addView(NativeUi.text(this, "添加 API", 19f))
+        editor.addView(NativeUi.field(this, "配置名称").also { name = it.editText!! })
+        editor.addView(NativeUi.field(this, "HTTPS 服务地址").also { endpoint = it.editText!! })
+        editor.addView(NativeUi.field(this, "模型名称").also { model = it.editText!! })
+        editor.addView(NativeUi.field(this, "API Key").also {
+            key = it.editText!!
+            key.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            it.endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
         })
-        content.addView(TextView(this).apply {
-            text = "‹  API 配置"; textSize = 21f; setTextColor(col(R.color.text_primary)); gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), dp(8), 0, dp(10)); setOnClickListener { finish() }
-        })
-        content.addView(label("可添加多套兼容 Chat Completions 的服务，并随时切换。", 12f).apply {
-            setTextColor(col(R.color.text_tertiary)); setPadding(dp(2), 0, 0, dp(3))
-        })
-
-        val editor = card()
-        editor.addView(label("添加 API", 19f).apply { setTextColor(col(R.color.text_primary)) })
-        name = field("配置名称，例如 OpenAI、硅基流动")
-        endpoint = field("HTTPS 服务地址，例如 https://example.com/v1")
-        model = field("模型名称")
-        key = field("API Key").apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD }
-        editor.addView(name); editor.addView(endpoint); editor.addView(model); editor.addView(key)
-        save = button("保存并使用") { saveProfile() }.apply {
-            setBackgroundResource(R.drawable.bg_flat_button); setTextColor(col(R.color.text_on_accent))
-            layoutParams = LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(10) }
-        }
+        save = NativeUi.button(this, "保存并使用", true) { saveProfile() }
         editor.addView(save)
-        status = label("填写完整后保存；密钥会加密保存在本机。", 12f).apply {
-            setTextColor(col(R.color.text_secondary)); setPadding(dp(5), dp(10), dp(5), 0)
-        }
+        status = NativeUi.text(this, "填写完整后保存；密钥会加密保存在本机。", 12f).apply { setPadding(0, NativeUi.dp(context, 10), 0, 0) }
         editor.addView(status)
-        content.addView(editor)
-
-        val saved = card()
-        saved.addView(label("API 配置", 19f).apply { setTextColor(col(R.color.text_primary)) })
-        saved.addView(label("内置与自行添加的配置都可以编辑或删除。", 12f).apply {
-            setTextColor(col(R.color.text_tertiary)); setPadding(0, 0, 0, dp(4))
-        })
-        list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(NativeUi.card(this).apply { addView(editor) })
+        val saved = NativeUi.column(this)
+        saved.addView(NativeUi.text(this, "API 配置", 19f))
+        saved.addView(NativeUi.text(this, "内置与自行添加的配置都可以编辑或删除。", 12f))
+        list = NativeUi.column(this, 0)
         saved.addView(list)
-        content.addView(saved)
+        content.addView(NativeUi.card(this).apply { addView(saved) })
         renderProfiles()
+    }
+
+    private fun showStatus(message: String) {
+        status.text = message
+        status.alpha = 0f
+        status.animate().alpha(1f).setDuration(180).start()
     }
 
     private fun saveProfile() {
@@ -118,15 +70,13 @@ class ApiProfileManagerActivity : AppCompatActivity() {
             TranslationApiProfiles.rename(this, id, label)
             TranslationApiProfiles.find(this, id)
         } ?: TranslationApiProfiles.add(this, label)
-        prefs.edit()
-            .putString(TranslationApiProfiles.endpointKey(profile.id), address)
+        prefs.edit().putString(TranslationApiProfiles.endpointKey(profile.id), address)
             .putString(TranslationApiProfiles.modelKey(profile.id), modelName)
-            .putString("active_api_profile", profile.id)
-            .putString("mode", "api").apply()
+            .putString("active_api_profile", profile.id).putString("mode", "api").apply()
         if (secret.isNotBlank()) SecretStorage(this, profile.id).save(secret)
         editingId = profile.id
         save.text = "保存修改并使用"
-        showStatus("${profile.label} 已保存并切换使用", true)
+        showStatus("${profile.label} 已保存并切换使用")
         renderProfiles()
         LyricsOverlayService.instance?.refreshSupplementTranslation()
     }
@@ -146,43 +96,37 @@ class ApiProfileManagerActivity : AppCompatActivity() {
         list.removeAllViews()
         val profiles = TranslationApiProfiles.all(this)
         if (profiles.isEmpty()) {
-            list.addView(label("还没有 API 配置，请在上方添加", 13f).apply { setTextColor(col(R.color.text_tertiary)) })
+            list.addView(NativeUi.text(this, "还没有 API 配置，请在上方添加", 13f))
             return
         }
         profiles.forEach { profile ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(7) }
-            }
-            row.addView(button(profile.label + "   ›") { edit(profile) }, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(6) })
-            row.addView(button("删除") { confirmDelete(profile) }, LinearLayout.LayoutParams(dp(82), dp(52)))
-            list.addView(row)
+            list.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = NativeUi.dp(context, 8) }
+                addView(NativeUi.button(context, profile.label) { edit(profile) },
+                    LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = NativeUi.dp(context, 6) })
+                addView(NativeUi.button(context, "删除") { confirmDelete(profile) },
+                    LinearLayout.LayoutParams(NativeUi.dp(context, 82), -2))
+            })
         }
     }
 
     private fun confirmDelete(profile: TranslationApiProfile) {
-        val dialog = Dialog(this)
-        val panel = card().apply {
-            addView(label("删除 ${profile.label}？", 20f).apply { setTextColor(col(R.color.text_primary)) })
-            addView(label("地址、模型和本机加密密钥都会删除，此操作无法恢复。", 12f).apply { setTextColor(col(R.color.text_secondary)) })
-            addView(button("确认删除") {
-                dialog.dismiss(); TranslationApiProfiles.remove(this@ApiProfileManagerActivity, profile.id)
-                if (editingId == profile.id) clearEditor()
-                if (prefs.getString("active_api_profile", "") == profile.id) {
-                    prefs.edit().putString("active_api_profile", TranslationApiProfiles.all(this@ApiProfileManagerActivity).firstOrNull()?.id ?: "none").apply()
-                }
-                showStatus("已删除 ${profile.label}", true); renderProfiles()
-            }.apply { setBackgroundResource(R.drawable.bg_flat_button); setTextColor(col(R.color.text_on_accent)); layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) } })
-            addView(button("取消") { dialog.dismiss() }.apply { layoutParams = LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(7) } })
+        NativeUi.confirm(this, "删除 ${profile.label}？", "地址、模型和本机加密密钥都会删除，此操作无法恢复。", "确认删除") {
+            TranslationApiProfiles.remove(this, profile.id)
+            if (editingId == profile.id) clearEditor()
+            if (prefs.getString("active_api_profile", "") == profile.id) {
+                prefs.edit().putString("active_api_profile", TranslationApiProfiles.all(this).firstOrNull()?.id ?: "none").apply()
+            }
+            showStatus("已删除 ${profile.label}")
+            renderProfiles()
         }
-        dialog.setContentView(panel)
-        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        dialog.show()
-        dialog.window?.attributes = dialog.window?.attributes?.apply { width = resources.displayMetrics.widthPixels - dp(36) }
     }
 
     private fun clearEditor() {
-        editingId = null; name.setText(""); endpoint.setText(""); model.setText(""); key.setText("")
+        editingId = null
+        name.setText(""); endpoint.setText(""); model.setText(""); key.setText("")
         save.text = "保存并使用"
     }
 }

@@ -32,11 +32,22 @@ jobs:
           node tests/match-memory.test.cjs
           node tests/home-ux.test.cjs
           node tests/compact-overlay.test.cjs
+          node tests/material-ui.test.cjs
 
-      - name: Build debug APK
+      - name: Test native lyric logic and build debug APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew testDebugUnitTest assembleDebug --stacktrace
+
+      - name: Upload native UI test reports and previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: material-ui-checks
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/reports/material-ui/
+          if-no-files-found: ignore
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
