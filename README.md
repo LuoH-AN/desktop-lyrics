@@ -29,6 +29,7 @@ Android floating lyrics overlay with MediaSession playback detection, synchroniz
 
 ## 核心功能
 
+- 原生 Material 界面：主页中控台、设置、管理与编辑页面统一使用 Material 控件；歌词由原生文本视图绘制，保持黑白灰风格
 - 本机实时读取歌名、歌手、专辑、播放状态、进度和封面
 - 直连 LRCLIB、QQ 音乐和网易云，并行搜索后综合歌名、歌手、专辑、时长和版本信息选择可靠歌词；必要时借助 iTunes 目录补充跨语言别名后重新匹配
 - 支持 QQ 音乐与网易云逐字歌词、官方翻译，可切换原文、双语或中文显示；同一来源存在多个版本时也会继续比较完整度
@@ -51,7 +52,7 @@ Android floating lyrics overlay with MediaSession playback detection, synchroniz
 
 - Android 8.0（API 26）及以上
 - 64 位 ARM 设备（arm64-v8a）；覆盖绝大多数现代 Android 手机，不支持纯 32 位旧机与 x86 模拟器
-- 需要 Android System WebView
+- 需要 Android System WebView（悬浮窗保留隐藏的匹配／缓存兼容引擎，不用于可见界面）
 - 播放器需要提供标准 Android MediaSession
 
 目前已在 vivo 设备上验证 Apple Music 与酷我音乐。代码也适配 QQ 音乐、网易云音乐、酷狗音乐、Spotify、YouTube Music、TIDAL、Musicolet、AIMP、VLC 等常见播放器。
@@ -69,7 +70,7 @@ Android floating lyrics overlay with MediaSession playback detection, synchroniz
 7. 歌词慢了点「提前」，歌词快了点「延后」，不需要判断偏移正负号。
 8. 找不到歌词时只显示提示，不提供重试按钮。版本预览、手动选择与导入 LRC 仍在应用内设置中管理。
 
-实际搜索流程与缓存差异见 [歌词搜索说明](./docs/lyrics-search.md)。
+实际搜索流程与缓存差异见 [歌词搜索说明](./docs/lyrics-search.md)。原生界面的组件与兼容边界见 [Material UI 重构说明](./docs/material-ui.md)。
 
 ## 权限与隐私
 

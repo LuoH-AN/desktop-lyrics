@@ -44,8 +44,10 @@ class NativeActivitySmokeTest {
     @Test fun synchronizationManagerOpensNatively() = opensNatively(LyricOffsetMemoryActivity::class.java)
     @Test fun translationSettingsOpenNatively() {
         // Android initializes this provider at process startup; Robolectric does not run merged providers.
-        com.google.mlkit.common.sdkinternal.MlKitContext.initialize(
-            androidx.test.core.app.ApplicationProvider.getApplicationContext()
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        com.google.mlkit.common.internal.MlKitInitProvider().attachInfo(
+            context,
+            android.content.pm.ProviderInfo().apply { authority = "${context.packageName}.mlkitinitprovider" }
         )
         opensNatively(TranslationSettingsActivity::class.java)
     }

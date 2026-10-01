@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>桌面歌词</title>
   <style>
+    html.native-engine body { display:none !important; }
     :root {
       --c1: 255, 91, 87;
       --c2: 113, 66, 255;
@@ -461,6 +462,11 @@
       previous: $('previous-button'), playPause: $('play-pause-button'), next: $('next-button'),
       chipsViewport: $('chips-viewport'), chipsTrack: $('chips-track'), chipsPrimary: $('chips-primary')
     };
+    // Android keeps this document offscreen for matching/cache compatibility only.
+    const nativeRendering = !!(window.LobstaNativeLyrics && window.LobstaNativeLyrics.renderNativeLyrics);
+    if(nativeRendering) document.documentElement.classList.add('native-engine');
+    let nativeMessage = '';
+    let supplementDueAt = 0;
     let backgroundMode = 'transparent';
     let lyricFontScale=1;
     let translationMode='bilingual';
@@ -488,9 +494,43 @@
     const LYRICS_CACHE_SCHEMA=3;
     const supplementChip=$('supplement-chip');
 
+    function emitNativeLyrics(message = nativeMessage) {
+      nativeMessage = message;
+      if(!nativeRendering)return;
+      window.LobstaNativeLyrics.renderNativeLyrics(JSON.stringify({
+        requestId:playback.requestId, key:playback.key,
+        track:playback.track, artist:playback.artist,
+        durationMs:playback.durationMs, message:nativeMessage, lines:playback.lyrics
+      }));
+    }
+
+    function updateNativeActiveLine(position) {
+      const lines=playback.lyrics;
+      if(!lines.length){playback.active=-1;return;}
+      if(lines[0].plain){playback.active=plainPlaybackIndex();return;}
+      let low=0,high=lines.length-1,index=0;
+      while(low<=high){
+        const mid=(low+high)>>1;
+        if(lines[mid].t<=position+90){index=mid;low=mid+1;}else high=mid-1;
+      }
+      playback.active=index;
+    }
+
+    // Driven by the service Handler, never by an offscreen WebView animation frame.
+    function engineTick() {
+      if(!nativeRendering||!playback.hasSession)return;
+      updateNativeActiveLine(lyricPosition());
+      if(supplementDueAt && performance.now()>=supplementDueAt){
+        supplementDueAt=0;
+        startSupplementWindow();
+      }
+      maybePrefetchSupplement();
+    }
+
     function requestSupplement(reset=true) {
       clearTimeout(supplementRequestTimer);
       supplementRequestTimer=0;
+      supplementDueAt=0;
       if(reset){
         supplementWindowEnd=-1;
         supplementInFlight=false;
@@ -499,7 +539,8 @@
         if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.cancelSupplement)window.LobstaNativeLyrics.cancelSupplement();
       }
       if(translationMode==='original'||currentHasOfficialTranslation||!playback.lyrics.length)return;
-      supplementRequestTimer=setTimeout(startSupplementWindow,reset?520:80);
+      if(nativeRendering) supplementDueAt=performance.now()+(reset?520:80);
+      else supplementRequestTimer=setTimeout(startSupplementWindow,reset?520:80);
     }
 
     function startSupplementWindow() {
@@ -533,7 +574,7 @@
     }
 
     function maybePrefetchSupplement() {
-      if(supplementInFlight||supplementRequestTimer||translationMode==='original'||currentHasOfficialTranslation)return;
+      if(supplementInFlight||supplementRequestTimer||supplementDueAt||translationMode==='original'||currentHasOfficialTranslation)return;
       if(supplementWindowEnd<0||plainPlaybackIndex()>=supplementWindowEnd-supplementPrefetchRemaining)requestSupplement(false);
     }
 
@@ -542,7 +583,12 @@
       if(data.status){
         const any=playback.lyrics.find(line=>line.supplement);
         const failed=data.status==='error';
-        if(data.status==='done'||failed) supplementInFlight=false;
+        if(data.status==='done'||data.status==='off'||failed) supplementInFlight=false;
+        if(nativeRendering){
+          if(data.status==='off') supplementWindowEnd=playback.lyrics.length+48;
+          else if(data.status==='done') maybePrefetchSupplement();
+          return;
+        }
         supplementChip.style.display=any||failed?'inline-flex':'none';
         supplementChip.textContent=failed?'翻译失败':any?any.supplement:'';
         supplementChip.title=data.message||'补充翻译设置';
@@ -554,6 +600,7 @@
       if(!line||line.translation||!data.text)return;
       line.translation=data.text;
       line.supplement=data.source;
+      if(nativeRendering){emitNativeLyrics();return;}
       supplementChip.textContent=data.source;
       supplementChip.style.display='inline-flex';
       supplementChip.title=data.source==='AI 译'?'由自定义 API 补充':'由离线语言包补充';
@@ -672,6 +719,14 @@
     }
 
     function renderLyrics(lines, message, offerCustom) {
+      if(nativeRendering){
+        playback.lyrics=lines||[];
+        playback.active=-1;
+        lyricsTrackingSuspended=false;
+        updateNativeActiveLine(lyricPosition());
+        emitNativeLyrics(message || (playback.lyrics.length ? '' : '找不到歌词'));
+        return;
+      }
       const relayoutEpoch=++lyricsRelayoutEpoch;
       lyricsTrackingSuspended=true;
       resetManualLyricsScroll();
@@ -1134,6 +1189,7 @@
     });
 
     function updateActiveLine(position, force) {
+      if(nativeRendering){updateNativeActiveLine(position);return;}
       const lines = playback.lyrics;
       if (!lines.length) return;
       let index = 0;
@@ -1189,6 +1245,7 @@
     }
 
     function updateWordProgress(position) {
+      if(nativeRendering)return;
       const line=playback.lyrics[playback.active];
       if(!line||!Array.isArray(line.words)||translationMode==='translated')return;
       if(document.body.classList.contains('compact')){
@@ -1376,7 +1433,7 @@
             playback.album||'',
             playback.durationMs||0,
             requestId,
-            !playback.coverIsNative
+            !nativeRendering && !playback.coverIsNative
           );
           return;
         } catch (_) {}
@@ -1499,8 +1556,8 @@
       const plainMode=!wordTimed.length&&!lineTimed.length;
       const base=wordTimed.length?wordTimed:(lineTimed.length?lineTimed:plainLyrics(data.lyrics));
       ui.lyrics.classList.toggle('plain-mode',plainMode);
-      renderLyrics(attachTranslations(base,data.translatedLyrics),data.lyrics?'':'找不到歌词');
       if((!playback.durationMs||playback.durationMs<1000)&&Number(data.duration)>0)playback.durationMs=Number(data.duration);
+      renderLyrics(attachTranslations(base,data.translatedLyrics),data.lyrics?'':'找不到歌词');
       if(data.cover)setCover(data.cover,false);
       const capabilities=(wordTimed.length?' · 逐字':'')+(plainMode?' · 无时间轴':'')+(currentHasOfficialTranslation?' · 译':'');
       ui.source.textContent=(data.source||'歌词源')+capabilities+(playback.candidates.length>1?' ▾':'');
@@ -1663,6 +1720,7 @@
 
     let infoMarqueeFrame=0,infoMarqueeSignature='',infoMarqueeWidth=-1;
     function updateInfoMarquee(force=false) {
+      if(nativeRendering)return;
       const viewport=ui.chipsViewport,track=ui.chipsTrack,primary=ui.chipsPrimary;
       if(!viewport||!track||!primary)return;
       const signature=[ui.volume.title,ui.source.textContent,ui.source.title,supplementChip.textContent,supplementChip.style.display].join('\u0000');
@@ -1697,6 +1755,7 @@
 
     function setCover(source, isNative) {
       if (!source) return;
+      if(nativeRendering){playback.cover=source;playback.coverIsNative=!!isNative;return;}
       if (!isNative && playback.coverIsNative && ui.cover.classList.contains('ready')) {
         // Keep the exact MediaSession artwork; a later remote result must not replace its palette.
         return;
@@ -1825,13 +1884,36 @@
       lowPaletteReady=true;
     }
 
+    function clearEngineSession(message) {
+      if(playback.hasSession || playback.key){
+        playback.requestId++;
+        playback.abort?.abort();
+        ++supplementEpoch;
+        if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.cancelSupplement)window.LobstaNativeLyrics.cancelSupplement();
+      }
+      clearTimeout(supplementRequestTimer);
+      supplementRequestTimer=0;
+      supplementDueAt=0;
+      supplementInFlight=false;
+      supplementWindowEnd=-1;
+      if(rematchPending){clearTimeout(rematchPending.timer);rematchPending=null;}
+      playback.hasSession=false;
+      playback.key='';playback.track='';playback.artist='';
+      playback.state='stopped';playback.positionMs=0;playback.durationMs=0;playback.speed=0;
+      playback.candidates=[];playback.lyrics=[];playback.active=-1;
+      automaticCandidates=[];candidateSignature='';manualSourceKey='';
+      emitNativeLyrics(message);
+    }
+
     function updatePlayback(data) {
       if (!data || data.permissionRequired) {
+        clearEngineSession('请授予通知使用权');
         document.body.classList.remove('has-session','playing');
         ui.waitingCopy.textContent = '请回到桌面歌词，授予“通知使用权”后重新开启悬浮窗。';
         return;
       }
       if (!data.hasSession || !data.track) {
+        clearEngineSession('未在播放');
         document.body.classList.remove('has-session','playing');
         ui.waitingCopy.textContent = '打开 Apple Music 或其他音乐软件后，歌词会自动出现。';
         return;
@@ -1849,7 +1931,7 @@
       playback.album = data.album || '';
       playback.state = data.state || 'paused';
       const reportedPositionMs = Number(data.positionMs || 0);
-      playback.durationMs = Number(data.durationMs || 0);
+      playback.durationMs = Number(data.durationMs || 0) || (changed ? 0 : playback.durationMs);
       playback.speed = playback.state === 'playing' ? Number(data.speed || 1) : 0;
       playback.canPlay = !!data.canPlay;
       playback.canPause = !!data.canPause;
@@ -1915,7 +1997,8 @@
       } else if (data.cover && (!playback.cover || !playback.coverIsNative)) {
         setCover(data.cover, true);
       }
-      if(!lyricsTrackingSuspended){
+      if(nativeRendering) engineTick();
+      else if(!lyricsTrackingSuspended){
         updateActiveLine(lyricPosition(), false);
         updateWordProgress(lyricPosition());
       }
@@ -1967,6 +2050,7 @@
     }
 
     function updateHeaderMarquees() {
+      if(nativeRendering)return;
       updateLoopMarquee(ui.trackBox, ui.track, 38, 31);
       updateLoopMarquee(ui.stateBox, ui.state, 25, 25);
       updateLoopMarquee(ui.artistBox, ui.artist, 28, 25);
@@ -1975,6 +2059,7 @@
     let recenterFrame = 0;
     let recenterTimer = 0;
     function recenterAfterLayout() {
+      if(nativeRendering)return;
       if (recenterFrame) cancelAnimationFrame(recenterFrame);
       clearTimeout(recenterTimer);
       recenterFrame = requestAnimationFrame(() => {
@@ -2002,6 +2087,7 @@
     function setFontScale(percent) {
       const normalized=Math.max(35,Math.min(150,Number(percent)||100));
       lyricFontScale=normalized/100;
+      if(nativeRendering)return;
       const root=document.documentElement.style;
       root.setProperty('--lyric-font-size',(28*lyricFontScale).toFixed(2)+'px');
       root.setProperty('--lyric-active-size',(34*lyricFontScale).toFixed(2)+'px');
@@ -2017,6 +2103,7 @@
     });
 
     window.LobstaOverlay = {
+      engineTick,
       refreshMatchManagement,
       receiveRematch,
       // 自定义歌词被新增/编辑/删除后，重新解析当前这首歌（走 resolveTrack，会先查自定义）
@@ -2184,7 +2271,7 @@
       fluidRenderer.start();
     }
     setNeutralPalette();
-    requestAnimationFrame(frame);
+    if(!nativeRendering) requestAnimationFrame(frame);
   })();
   </script>
 </body>

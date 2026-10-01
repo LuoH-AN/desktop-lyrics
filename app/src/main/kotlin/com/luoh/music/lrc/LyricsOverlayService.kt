@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -29,6 +30,7 @@ import android.provider.Settings
 import android.util.Log
 import android.util.Base64
 import android.view.Gravity
+import android.view.ContextThemeWrapper
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -41,8 +43,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.appcompat.content.res.AppCompatResources
+import com.google.android.material.button.MaterialButton
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -74,13 +75,20 @@ class LyricsOverlayService : Service() {
     private val listenerComponent by lazy { ComponentName(this, MediaListenerService::class.java) }
     private val lyricsRepository = DirectLyricsRepository()
     private val lyricsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val uiContext by lazy { ContextThemeWrapper(this, R.style.Theme_DesktopLyrics) }
 
     private var overlayRoot: FrameLayout? = null
     private var overlayContent: FrameLayout? = null
     private var chromeBar: LinearLayout? = null
     private var dragTouchArea: View? = null
-    private var lockButton: TextView? = null
-    private var closeButton: TextView? = null
+    private var lockButton: MaterialButton? = null
+    private var closeButton: MaterialButton? = null
+    private var nativeLyrics: CompactLyricsView? = null
+    private var nativeTrack = ""
+    private var nativeArtist = ""
+    private var nativeDocumentRequestId = -1
+    private var nativeContentHeight = 0
+    // Retained offscreen only for matching/cache compatibility; never added to the window.
     private var webView: WebView? = null
     private var windowParams: WindowManager.LayoutParams? = null
     private var webReady = false
@@ -126,6 +134,14 @@ class LyricsOverlayService : Service() {
             if (!monitorStarted) return
             refreshActiveSessions()
             mainHandler.postDelayed(this, 2_000L)
+        }
+    }
+
+    private val engineTickRunnable = object : Runnable {
+        override fun run() {
+            if (!webReady || overlayRoot == null) return
+            webView?.evaluateJavascript("window.LobstaOverlay && window.LobstaOverlay.engineTick();", null)
+            mainHandler.postDelayed(this, 250L)
         }
     }
 
@@ -335,7 +351,9 @@ class LyricsOverlayService : Service() {
             loadUrl("about:blank")
             destroy()
         }
+        webReady = false
         webView = null
+        nativeLyrics = null
         overlayRoot = null
         overlayContent = null
         chromeBar = null
@@ -363,6 +381,18 @@ class LyricsOverlayService : Service() {
 
     private inner class LyricsJavascriptBridge {
         @JavascriptInterface
+        fun renderNativeLyrics(payload: String) {
+            if (payload.length > 2_000_000) return
+            val result = OverlayNativeDocument.parse(payload) ?: return
+            mainHandler.post {
+                if (nativeTrack.isBlank() || result.track != nativeTrack || result.artist != nativeArtist ||
+                    result.requestId < nativeDocumentRequestId) return@post
+                nativeDocumentRequestId = result.requestId
+                nativeLyrics?.setDocument(result.document, result.message, result.durationMs)
+            }
+        }
+
+        @JavascriptInterface
         fun setCompactContentState(hasLyrics: Boolean, hasTranslation: Boolean) {
             mainHandler.post {
                 if (compactHasLyrics == hasLyrics && compactHasTranslation == hasTranslation) return@post
@@ -383,11 +413,13 @@ class LyricsOverlayService : Service() {
             val remembered = prefs.getInt(preferenceKey, 0)
                 .coerceIn(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
             mainHandler.post {
+                if (safeTitle != nativeTrack || safeArtist != nativeArtist) return@post
                 currentLyricIdentity = safeIdentity
                 currentLyricSource = safeSource
                 currentLyricTitle = safeTitle
                 currentLyricArtist = safeArtist
                 lyricOffsetMs = remembered
+                nativeLyrics?.setOffset(remembered)
                 prefs.edit().putInt(PREF_LYRIC_OFFSET_MS, remembered).apply()
                 // 记录当前歌词身份，设置页在悬浮窗未运行时也能把偏移写到对的 per-song 键
                 rememberActiveLyric(prefs, safeIdentity, safeSource, safeTitle, safeArtist)
@@ -742,7 +774,7 @@ class LyricsOverlayService : Service() {
         }
         windowParams = params
 
-        val root = FrameLayout(this).apply {
+        val root = FrameLayout(uiContext).apply {
             clipChildren = false
             clipToPadding = false
             setBackgroundColor(Color.TRANSPARENT)
@@ -765,9 +797,9 @@ class LyricsOverlayService : Service() {
             insets
         }
 
-        val content = FrameLayout(this).apply {
+        val content = FrameLayout(uiContext).apply {
             clipToOutline = true
-            elevation = dp(14).toFloat()
+            elevation = 0f
             background = overlayBackground(compact)
         }
         overlayContent = content
@@ -777,7 +809,7 @@ class LyricsOverlayService : Service() {
         )
         content.rotation = if (overlayRotated) 90f else 0f
 
-        val chrome = LinearLayout(this).apply {
+        val chrome = LinearLayout(uiContext).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, 0)
@@ -785,14 +817,11 @@ class LyricsOverlayService : Service() {
         }
         chromeBar = chrome
 
-        val dragArea = View(this)
+        val dragArea = View(uiContext)
         dragTouchArea = dragArea
 
-        closeButton = chromeButton("") { stopSelf() }.apply {
-            contentDescription = "关闭悬浮窗"
-            setChromeIcon(this, R.drawable.ic_overlay_close)
-        }
-        lockButton = chromeButton("") {
+        closeButton = chromeButton(R.drawable.ic_overlay_close, "关闭悬浮窗") { stopSelf() }
+        lockButton = chromeButton(R.drawable.ic_overlay_unlocked, "锁定悬浮窗位置") {
             positionLocked = !positionLocked
             prefs.edit().putBoolean(PREF_POSITION_LOCKED, positionLocked).apply()
             updateLockControl()
@@ -838,13 +867,24 @@ class LyricsOverlayService : Service() {
             }
         })
 
-        val webContainer = FrameLayout(this)
-        content.addView(webContainer, FrameLayout.LayoutParams(
+        val lyrics = CompactLyricsView(uiContext).apply {
+            onContentSizeChanged = { hasLyrics, hasTranslation, height ->
+                compactHasLyrics = hasLyrics
+                compactHasTranslation = hasTranslation
+                nativeContentHeight = height
+                resizeCompactWindow()
+            }
+        }
+        nativeLyrics = lyrics
+        content.addView(lyrics, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ).apply { marginEnd = dp(96) })
+        applyNativeAppearance()
 
-        val player = WebView(this).apply {
+        val player = WebView(uiContext).apply {
+            visibility = View.GONE
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
             setBackgroundColor(Color.TRANSPARENT)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -862,27 +902,23 @@ class LyricsOverlayService : Service() {
                 ): Boolean = true
 
                 override fun onPageFinished(view: WebView?, url: String?) {
+                    if (url != "file:///android_asset/lyrics_overlay.html" || overlayRoot == null) return
                     webReady = true
                     applyFontScale()
                     applyLyricColor()
                     applyLyricOffset()
                     applyTranslationMode()
-                    evaluateJavascript(
-                        "window.LobstaOverlay && window.LobstaOverlay.setCompact($compact);",
-                        null
-                    )
                     applyCompactLayout()
                     applyBackgroundMode()
                     pendingSnapshot?.let { deliverToWeb(it) } ?: scheduleSnapshot()
+                    mainHandler.removeCallbacks(engineTickRunnable)
+                    mainHandler.post(engineTickRunnable)
                 }
             }
             loadUrl("file:///android_asset/lyrics_overlay.html")
         }
         webView = player
-        webContainer.addView(player, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        ))
+        // The engine deliberately has no parent: only native views enter the overlay window.
         content.addView(dragArea, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
@@ -1026,31 +1062,27 @@ class LyricsOverlayService : Service() {
         )
     }
 
-    private fun chromeButton(label: String, action: () -> Unit): TextView = TextView(this).apply {
-        text = label
-        setTextColor(Color.argb(225, 255, 255, 255))
-        textSize = 11f
-        includeFontPadding = false
-        gravity = Gravity.CENTER
-        setShadowLayer(dp(2).toFloat(), 0f, dp(1).toFloat(), Color.argb(190, 0, 0, 0))
-        isFocusable = true
-        setOnClickListener { action() }
-        setPadding(dp(14), 0, dp(14), 0)
-    }
-
-    private fun setChromeIcon(button: TextView, drawableRes: Int) {
-        val icon = AppCompatResources.getDrawable(this, drawableRes)?.mutate()?.apply {
-            setTint(Color.argb(225, 255, 255, 255))
+    private fun chromeButton(icon: Int, description: String, action: () -> Unit): MaterialButton =
+        NativeUi.iconButton(uiContext, icon, description, action).apply {
+            backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+            iconTint = ColorStateList.valueOf(Color.parseColor(lyricColor))
+            rippleColor = ColorStateList.valueOf(Color.argb(40, 255, 255, 255))
+            strokeWidth = 0
         }
-        button.text = ""
-        icon?.setBounds(0, 0, dp(20), dp(20))
-        button.setCompoundDrawables(icon, null, null, null)
+
+    private fun setChromeIcon(button: MaterialButton, drawableRes: Int) {
+        button.setIconResource(drawableRes)
+        button.iconTint = ColorStateList.valueOf(Color.parseColor(lyricColor))
     }
 
     private fun overlayBackground(isCompact: Boolean): GradientDrawable = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = dp(22).toFloat()
-        setColor(Color.TRANSPARENT)
+        setColor(when (backgroundMode) {
+            BACKGROUND_LOW, BACKGROUND_MEDIUM -> Color.argb(140, 12, 12, 14)
+            BACKGROUND_HIGH -> Color.argb(245, 12, 12, 14)
+            else -> Color.TRANSPARENT
+        })
         if (!isCompact) {
             setStroke(dp(1), Color.argb(45, 255, 255, 255))
         }
@@ -1095,17 +1127,17 @@ class LyricsOverlayService : Service() {
     private fun displayedVisualTargetIsCompact(): Boolean = true
 
     private fun applyBackgroundMode() {
-        val encodedMode = JSONObject.quote(backgroundMode)
-        webView?.evaluateJavascript(
-            "window.LobstaOverlay && window.LobstaOverlay.setBackgroundMode($encodedMode);",
-            null
-        )
+        overlayContent?.background = overlayBackground(true)
+    }
+
+    private fun applyNativeAppearance() {
+        val color = Color.parseColor(lyricColor)
+        nativeLyrics?.setAppearance(fontScalePercent, color, translationMode, contextLines(true), contextLines(false))
+        listOfNotNull(lockButton, closeButton).forEach { it.iconTint = ColorStateList.valueOf(color) }
     }
 
     private fun applyFontScale() {
-        webView?.evaluateJavascript(
-            "window.LobstaOverlay && window.LobstaOverlay.setFontScale($fontScalePercent);", null
-        )
+        applyNativeAppearance()
         resizeCompactWindow()
     }
 
@@ -1114,6 +1146,7 @@ class LyricsOverlayService : Service() {
     ).coerceIn(0, 2)
 
     private fun desiredCompactHeight(): Int {
+        if (nativeContentHeight > 0) return nativeContentHeight
         val secondaryLines = if (compactHasLyrics) contextLines(true) + contextLines(false) +
             (if (compactHasTranslation) 1 else 0) else 0
         val scale = fontScalePercent / 100f
@@ -1121,9 +1154,7 @@ class LyricsOverlayService : Service() {
     }
 
     private fun applyCompactLayout() {
-        webView?.evaluateJavascript(
-            "window.LobstaOverlay && window.LobstaOverlay.setContext(${contextLines(true)}, ${contextLines(false)});", null
-        )
+        applyNativeAppearance()
         resizeCompactWindow()
     }
 
@@ -1141,14 +1172,11 @@ class LyricsOverlayService : Service() {
     }
 
     private fun applyLyricColor() {
-        val encoded = JSONObject.quote(lyricColor)
-        webView?.evaluateJavascript(
-            "window.LobstaOverlay && window.LobstaOverlay.setLyricColor($encoded);",
-            null
-        )
+        applyNativeAppearance()
     }
 
     private fun applyLyricOffset() {
+        nativeLyrics?.setOffset(lyricOffsetMs)
         webView?.evaluateJavascript(
             "window.LobstaOverlay && window.LobstaOverlay.setLyricOffset($lyricOffsetMs);",
             null
@@ -1210,6 +1238,7 @@ class LyricsOverlayService : Service() {
     fun isPositionLocked(): Boolean = positionLocked
 
     private fun applyTranslationMode() {
+        applyNativeAppearance()
         val encoded = JSONObject.quote(translationMode)
         webView?.evaluateJavascript(
             "window.LobstaOverlay && window.LobstaOverlay.setTranslationMode($encoded);",
@@ -1242,6 +1271,7 @@ class LyricsOverlayService : Service() {
     private fun updateLockControl() {
         lockButton?.let { button ->
             button.contentDescription = if (positionLocked) "位置已锁定，点击解锁" else "锁定悬浮窗位置"
+            button.isChecked = positionLocked
             button.isSelected = positionLocked
             setChromeIcon(button, if (positionLocked) R.drawable.ic_overlay_locked else R.drawable.ic_overlay_unlocked)
         }
@@ -1510,10 +1540,34 @@ class LyricsOverlayService : Service() {
         }
     }
 
+    private fun updateNativePlayback(snapshot: JSONObject) {
+        val track = snapshot.optString("track")
+        val artist = snapshot.optString("artist")
+        if (snapshot.optBoolean("permissionRequired") || !snapshot.optBoolean("hasSession") || track.isBlank()) {
+            nativeTrack = ""
+            nativeArtist = ""
+            nativeLyrics?.clear(if (snapshot.optBoolean("permissionRequired")) "请授予通知使用权" else "未在播放")
+            return
+        }
+        if (track != nativeTrack || artist != nativeArtist) {
+            nativeTrack = track
+            nativeArtist = artist
+            nativeLyrics?.clear("正在匹配歌词…")
+        }
+        nativeLyrics?.setPlayback(
+            "$track\u0000$artist",
+            snapshot.optLong("positionMs"), snapshot.optLong("durationMs"),
+            snapshot.optString("state") == "playing", snapshot.optDouble("speed", 1.0).toFloat()
+        )
+    }
+
     private fun deliverToWeb(snapshot: JSONObject) {
         pendingSnapshot = snapshot
+        updateNativePlayback(snapshot)
         if (!webReady) return
-        webView?.post {
+        // View.post waits for attachment; the engine deliberately never gets attached.
+        mainHandler.post {
+            if (!webReady) return@post
             webView?.evaluateJavascript(
                 "window.LobstaOverlay && window.LobstaOverlay.updatePlayback($snapshot);",
                 null

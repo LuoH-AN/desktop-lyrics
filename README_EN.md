@@ -27,6 +27,7 @@ The video shows an earlier UI; the current source uses only a compact lyrics win
 
 ## Highlights
 
+- Native Material UI across the player, settings, managers, and editors, with native lyric text rendering and a restrained monochrome theme
 - Local, real-time track title, artist, album, playback state, progress, and artwork
 - Parallel searches across LRCLIB, QQ Music, and NetEase Cloud Music, ranked by title, artist, album, duration, and version metadata; an iTunes catalog lookup can supply localized aliases when every direct search fails
 - QQ Music and NetEase word-timed lyrics and official translations, with original, bilingual, or translated display modes
@@ -49,7 +50,7 @@ The video shows an earlier UI; the current source uses only a compact lyrics win
 
 - Android 8.0 (API 26) or later
 - A 64-bit ARM device (arm64-v8a); 32-bit-only devices and x86 emulators are not supported by the release APK
-- Android System WebView
+- Android System WebView (retained only for the overlay's hidden matching/cache compatibility engine, not visible UI)
 - A music player that exposes a standard Android MediaSession
 
 Apple Music and Kuwo Music have been tested on a vivo device. The implementation also recognizes common players such as QQ Music, NetEase Cloud Music, Kugou Music, Spotify, YouTube Music, TIDAL, Musicolet, AIMP, and VLC.
