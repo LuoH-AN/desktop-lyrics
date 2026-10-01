@@ -54,7 +54,7 @@ class MaterialUiLayoutTest {
         layout(root, preview = preview)
         val toggle = root.findViewById<View>(R.id.overlay_toggle)
         assertTrue("Overlay switch must be Material", toggle is MaterialSwitch)
-        val thumbBounds = (toggle as MaterialSwitch).thumbDrawable.bounds
+        val thumbBounds = requireNotNull((toggle as MaterialSwitch).thumbDrawable).bounds
         assertTrue("Material switch thumb must be drawn", thumbBounds.width() > 0)
         assertEquals("Switch thumb must remain circular", thumbBounds.width(), thumbBounds.height())
         assertTrue("Font slider must be Material", root.findViewById<View>(R.id.seek_font_size) is Slider)
