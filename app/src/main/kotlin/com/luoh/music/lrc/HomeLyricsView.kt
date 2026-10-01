@@ -554,7 +554,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         minimumHeight = 0
         insetTop = 0
         insetBottom = 0
-        setPadding(0, 0, 0, 0)
+        setPaddingRelative(0, 0, 0, 0)
         strokeWidth = 0
         cornerRadius = dp(12)
         backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)

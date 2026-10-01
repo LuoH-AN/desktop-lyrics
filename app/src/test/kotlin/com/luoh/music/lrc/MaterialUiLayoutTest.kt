@@ -39,6 +39,12 @@ class MaterialUiLayoutTest {
             View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
         )
         view.layout(0, 0, width, height)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+        )
+        view.layout(0, 0, width, height)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bitmap))
         if (preview != null) {
@@ -113,6 +119,8 @@ class MaterialUiLayoutTest {
         assertEquals(more.height, overlay.height)
         assertEquals(more.top, overlay.top)
         assertEquals(more.iconSize, overlay.iconSize)
+        assertTrue("Material padding must not clip the lyric icon", overlay.paddingStart + overlay.paddingEnd + overlay.iconSize <= overlay.width)
+        assertTrue("Material padding must not clip the more icon", more.paddingStart + more.paddingEnd + more.iconSize <= more.width)
         assertEquals(0, overlay.strokeWidth)
         assertTrue("Actions must stay within the narrow screen", more.right <= (more.parent as View).width + 8 * home.resources.displayMetrics.density)
         overlay.performClick()

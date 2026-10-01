@@ -42,6 +42,12 @@ class NativeActivitySmokeTest {
     @Test fun lyricEditorOpensWithMaterialFields() = opensNatively(CustomLyricsEditActivity::class.java, needsForm = true)
     @Test fun sourceManagerOpensNatively() = opensNatively(LyricSourceManagerActivity::class.java)
     @Test fun synchronizationManagerOpensNatively() = opensNatively(LyricOffsetMemoryActivity::class.java)
-    @Test fun translationSettingsOpenNatively() = opensNatively(TranslationSettingsActivity::class.java)
+    @Test fun translationSettingsOpenNatively() {
+        // Android initializes this provider at process startup; Robolectric does not run merged providers.
+        com.google.mlkit.common.sdkinternal.MlKitContext.initialize(
+            androidx.test.core.app.ApplicationProvider.getApplicationContext()
+        )
+        opensNatively(TranslationSettingsActivity::class.java)
+    }
     @Test fun apiManagerOpensNatively() = opensNatively(ApiProfileManagerActivity::class.java)
 }

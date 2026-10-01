@@ -18,6 +18,8 @@
         <item name="android:minHeight">48dp</item>
         <item name="android:gravity">center</item>
         <item name="android:paddingHorizontal">12dp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
         <item name="android:paddingVertical">10dp</item>
         <item name="android:insetLeft">0dp</item>
         <item name="android:insetRight">0dp</item>
@@ -32,6 +34,7 @@
     <style name="MaterialIconAction" parent="MaterialAction">
         <item name="android:layout_width">48dp</item><item name="android:layout_height">48dp</item>
         <item name="android:padding">0dp</item><item name="android:paddingHorizontal">0dp</item><item name="android:paddingVertical">0dp</item>
+        <item name="android:paddingStart">0dp</item><item name="android:paddingEnd">0dp</item>
         <item name="strokeWidth">0dp</item><item name="cornerRadius">24dp</item>
         <item name="iconSize">22dp</item><item name="iconPadding">0dp</item><item name="iconGravity">textStart</item>
         <item name="iconTint">@color/settings_action_text</item>
@@ -57,6 +60,8 @@
     <style name="SettingsSwitch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
         <item name="android:layout_width">wrap_content</item><item name="android:layout_height">48dp</item>
         <item name="android:minHeight">48dp</item><item name="thumbIcon">@null</item>
+        <item name="thumbTint">@color/native_switch_thumb</item>
+        <item name="trackTint">@color/native_switch_track</item>
     </style>
     <style name="SettingsSlider" parent="Widget.Material3.Slider">
         <item name="android:layout_width">match_parent</item><item name="android:layout_height">48dp</item>
@@ -99,6 +104,6 @@
     </style>
     <style name="SettingHint"><item name="android:layout_width">match_parent</item><item name="android:layout_height">wrap_content</item><item name="android:layout_marginTop">6dp</item><item name="android:textColor">@color/text_secondary</item><item name="android:textSize">12sp</item><item name="android:lineSpacingExtra">2dp</item></style>
     <style name="PreviewLyric"><item name="android:layout_width">match_parent</item><item name="android:layout_height">wrap_content</item><item name="android:paddingVertical">3dp</item><item name="android:fontFamily">sans-serif-medium</item><item name="android:maxLines">1</item><item name="android:ellipsize">end</item><item name="android:textColor">#FFFFFF</item></style>
-    <style name="StepButton" parent="MaterialAction"><item name="android:layout_width">48dp</item><item name="android:layout_height">48dp</item><item name="android:paddingHorizontal">0dp</item><item name="android:paddingVertical">0dp</item><item name="android:textSize">20sp</item></style>
+    <style name="StepButton" parent="MaterialAction"><item name="android:layout_width">48dp</item><item name="android:layout_height">48dp</item><item name="android:paddingHorizontal">0dp</item><item name="android:paddingVertical">0dp</item><item name="android:paddingStart">0dp</item><item name="android:paddingEnd">0dp</item><item name="android:textSize">20sp</item></style>
     <style name="StepValue"><item name="android:layout_width">48dp</item><item name="android:layout_height">wrap_content</item><item name="android:gravity">center</item><item name="android:textColor">@color/text_primary</item><item name="android:textSize">14sp</item></style>
 </resources>
