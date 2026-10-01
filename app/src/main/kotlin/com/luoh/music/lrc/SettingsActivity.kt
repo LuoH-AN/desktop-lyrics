@@ -200,8 +200,8 @@ class SettingsActivity : AppCompatActivity() {
         }
         // 关于
         findViewById<View>(R.id.cell_check_update).setOnClickListener { checkForUpdates() }
-        findViewById<View>(R.id.cell_bilibili).setOnClickListener {
-            openUrl("https://space.bilibili.com/487906004")
+        findViewById<View>(R.id.cell_maintainer).setOnClickListener {
+            openUrl("https://github.com/LuoH-AN")
         }
         findViewById<View>(R.id.cell_github).setOnClickListener {
             openUrl("https://github.com/LuoH-AN/desktop-lyrics")

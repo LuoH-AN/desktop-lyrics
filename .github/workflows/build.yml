@@ -33,6 +33,7 @@ jobs:
           node tests/home-ux.test.cjs
           node tests/compact-overlay.test.cjs
           node tests/material-ui.test.cjs
+          node tests/release-metadata.test.cjs
 
       - name: Test native lyric logic and build debug APK
         run: |

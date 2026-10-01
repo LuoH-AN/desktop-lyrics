@@ -1,5 +1,16 @@
 # 更新记录
 
+## 1.0.0 · 2026-10-01
+
+LuoH-AN 维护版本的首个正式发布。
+
+- 全面切换为 Material 原生界面，优化中控台与小歌词窗。
+- 更新项目信息与文档，启用独立正式签名。
+- 修复歌词显示、控件尺寸及长句跟随问题。
+
+<details>
+<summary>早期版本与上游历史</summary>
+
 ## 1.0
 
 - 项目更名并迁移维护：应用包名改为 `com.luoh.music.lrc`，仓库迁至 [LuoH-AN/desktop-lyrics](https://github.com/LuoH-AN/desktop-lyrics)，版本号回到 1.0 重新计数；原始项目由 B站 @Tcrrrry 创作，在其基础上继续开发
@@ -113,3 +124,5 @@
 - 透明、低负载、高负载动态背景
 - 音量与蓝牙、有线、USB 输出设备显示
 - 独立包名 `com.tcrrry.desktoplyrics`
+
+</details>

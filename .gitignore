@@ -5,6 +5,8 @@
 local.properties
 keystore.properties
 *.jks
+*.p12
+*.pfx
 *.keystore
 !debug.keystore
 captures/

@@ -183,16 +183,16 @@
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
                     <com.google.android.material.divider.MaterialDivider style="@style/CellDivider" />
-                    <com.google.android.material.card.MaterialCardView style="@style/SettingsRowCard" android:id="@+id/cell_bilibili">
+                    <com.google.android.material.card.MaterialCardView style="@style/SettingsRowCard" android:id="@+id/cell_maintainer">
                         <LinearLayout style="@style/Cell">
-                            <com.google.android.material.textview.MaterialTextView style="@style/CellTitle" android:text="作者 · B站 @Tcrrrry" />
+                            <com.google.android.material.textview.MaterialTextView style="@style/CellTitle" android:text="维护者 · LuoH-AN" />
                             <com.google.android.material.textview.MaterialTextView style="@style/Chevron" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
                     <com.google.android.material.divider.MaterialDivider style="@style/CellDivider" />
                     <com.google.android.material.card.MaterialCardView style="@style/SettingsRowCard" android:id="@+id/cell_github">
                         <LinearLayout style="@style/Cell">
-                            <com.google.android.material.textview.MaterialTextView style="@style/CellTitle" android:text="开源项目 · GitHub" />
+                            <com.google.android.material.textview.MaterialTextView style="@style/CellTitle" android:text="项目主页 · GitHub" />
                             <com.google.android.material.textview.MaterialTextView style="@style/Chevron" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
