@@ -329,6 +329,10 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         val titleLines = if (compact) 1 else 2
         if (song.maxLines != titleLines) song.maxLines = titleLines
         (coverTile.layoutParams as LayoutParams).apply { width = dp(if (compact) 48 else 60); height = width }
+        if (snapshot.cover == null) {
+            val padding = dp(if (compact) 12 else 17)
+            cover.setPadding(padding, padding, padding, padding)
+        }
         (play.layoutParams as LayoutParams).height = dp(if (compact) 56 else 64)
         (transport.layoutParams as LayoutParams).topMargin = dp(if (compact) 8 else 12)
         bar.setPadding(dp(16), dp(if (compact) 4 else 8), dp(16), dp(if (compact) 12 else 20))
