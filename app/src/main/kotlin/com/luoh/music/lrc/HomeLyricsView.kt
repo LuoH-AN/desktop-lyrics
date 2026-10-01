@@ -166,7 +166,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     init {
         orientation = VERTICAL
         stage.addView(scroll, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        scroll.addView(lyricsTrack, ScrollView.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        scroll.addView(lyricsTrack, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         stage.addView(empty, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         stage.addView(interlude, FrameLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(26) })
         stage.addView(topFade, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(46), Gravity.TOP))
