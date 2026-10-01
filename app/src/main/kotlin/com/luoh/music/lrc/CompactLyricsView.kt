@@ -217,14 +217,25 @@ class CompactLyricsView(context: Context) : LinearLayout(context) {
             addView(lyric, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, rowHeight))
         }
 
-        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-            super.onSizeChanged(w, h, oldw, oldh)
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            val viewportWidth = MeasureSpec.getSize(widthMeasureSpec)
             val canScroll = model.current || model.translated
-            contentWidth = if (canScroll) max(w, ceil(Layout.getDesiredWidth(model.line.text, lyric.paint)).toInt() + dp(2)) else w
-            lyric.layoutParams = FrameLayout.LayoutParams(contentWidth, rowHeight, Gravity.TOP or Gravity.LEFT)
+            val measuredContent = if (canScroll) max(viewportWidth,
+                ceil(Layout.getDesiredWidth(model.line.text, lyric.paint)).toInt() + dp(2)) else viewportWidth
+            if (contentWidth != measuredContent) {
+                contentWidth = measuredContent
+                scrollShift = if (rtl) -(contentWidth - viewportWidth).toFloat() else 0f
+                scrollTarget = scrollShift
+            }
+            // Size the text before measuring children; changing LayoutParams during layout can
+            // leave a long line constrained to the viewport and prevent horizontal following.
+            (lyric.layoutParams as FrameLayout.LayoutParams).apply {
+                width = contentWidth
+                height = rowHeight
+                gravity = Gravity.TOP or Gravity.LEFT
+            }
             lyric.ellipsize = if (canScroll) null else TextUtils.TruncateAt.END
-            scrollShift = if (rtl) -(contentWidth - w).toFloat() else 0f
-            scrollTarget = scrollShift
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         }
 
         fun paintPosition(position: Long, lineStart: Long, lineEnd: Long, elapsed: Long, rewound: Boolean) {

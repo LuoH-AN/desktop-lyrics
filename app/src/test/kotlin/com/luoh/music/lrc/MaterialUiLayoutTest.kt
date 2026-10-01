@@ -32,6 +32,9 @@ class MaterialUiLayoutTest {
 
     private fun layout(view: View, widthDp: Int = 320, heightDp: Int = 640, preview: String? = null) {
         val density = view.resources.displayMetrics.density
+        val host = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup()
+        (view.parent as? ViewGroup)?.removeView(view)
+        host.get().setContentView(view)
         val width = (widthDp * density).toInt()
         val height = (heightDp * density).toInt()
         view.measure(
@@ -53,6 +56,8 @@ class MaterialUiLayoutTest {
             output.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         bitmap.recycle()
+        (view.parent as? ViewGroup)?.removeView(view)
+        host.pause().stop().destroy()
     }
 
     private fun assertNativeSettings(preview: String) {
