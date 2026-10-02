@@ -89,7 +89,16 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     private val bar = LinearLayout(context).apply { orientation = VERTICAL }
     private val transport = LinearLayout(context).apply { gravity = Gravity.CENTER }
     private val stage = FrameLayout(context)
-    private val scroll = ScrollView(context).apply {
+    private val scroll: ScrollView = object : ScrollView(context) {
+        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+            // Observe touches before clickable lyric rows consume them.
+            if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_MOVE) {
+                lyricMotion.cancel()
+                manualScrollUntil = SystemClock.uptimeMillis() + 4000L
+            }
+            return super.dispatchTouchEvent(event)
+        }
+    }.apply {
         id = R.id.home_lyrics_scroll
         isVerticalScrollBarEnabled = false
         overScrollMode = View.OVER_SCROLL_NEVER
@@ -264,13 +273,6 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         addView(playerCard, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
             marginStart = dp(16); marginEnd = dp(16); topMargin = dp(8); bottomMargin = dp(16)
         })
-        scroll.setOnTouchListener { _, event ->
-            if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_MOVE) {
-                lyricMotion.cancel()
-                manualScrollUntil = SystemClock.uptimeMillis() + 4000L
-            }
-            false
-        }
         progress.addOnChangeListener { _, value, fromUser ->
             if (fromUser) {
                 timeCurrent.text = formatTime(value.toLong())
