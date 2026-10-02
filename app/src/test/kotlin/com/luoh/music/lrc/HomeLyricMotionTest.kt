@@ -39,6 +39,8 @@ class HomeLyricMotionTest {
     private var animationsEnabled = true
 
     @Before fun createLyrics() {
+        org.robolectric.shadows.ShadowChoreographer.setPaused(true)
+        org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
         controller = Robolectric.buildActivity(Activity::class.java).setup().visible()
         val context = ContextThemeWrapper(controller.get(), R.style.Theme_DesktopLyrics)
         val density = context.resources.displayMetrics.density
@@ -98,7 +100,9 @@ class HomeLyricMotionTest {
     }
 
     private fun advanceTo(millis: Long) { animator().currentPlayTime = millis }
-    private fun finishFrames() = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1000))
+    private fun finishFrames() = repeat(64) {
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16))
+    }
 
     private fun assertSettled(index: Int) {
         assertFalse(motion.isRunning)
@@ -115,7 +119,9 @@ class HomeLyricMotionTest {
 
     private fun preview(name: String) {
         val bitmap = Bitmap.createBitmap(scroll.width, scroll.height, Bitmap.Config.ARGB_8888)
-        scroll.draw(Canvas(bitmap))
+        val canvas = Canvas(bitmap)
+        canvas.translate(-scroll.scrollX.toFloat(), -scroll.scrollY.toFloat())
+        scroll.draw(canvas)
         val output = File("build/reports/material-ui/$name.png")
         output.parentFile.mkdirs()
         output.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }

@@ -69,6 +69,13 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            it.timeout.set(java.time.Duration.ofMinutes(5))
+            it.testLogging {
+                events("started", "passed", "skipped", "failed")
+                exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            }
+        }
     }
 
     kotlinOptions {

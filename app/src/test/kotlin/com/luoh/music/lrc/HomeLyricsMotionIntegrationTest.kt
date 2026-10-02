@@ -36,6 +36,8 @@ class HomeLyricsMotionIntegrationTest {
     private val snapshot = HomeLyricsView.Snapshot(track = "Song", positionMs = 2000L, durationMs = 30000L)
 
     @Before fun createHome() {
+        org.robolectric.shadows.ShadowChoreographer.setPaused(true)
+        org.robolectric.shadows.ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
         controller = Robolectric.buildActivity(Activity::class.java).setup().visible()
         home = HomeLyricsView(ContextThemeWrapper(controller.get(), R.style.Theme_DesktopLyrics))
         controller.get().setContentView(home)
@@ -73,6 +75,10 @@ class HomeLyricsMotionIntegrationTest {
         animator.currentPlayTime = 120L
     }
 
+    private fun advanceFrames() = repeat(64) {
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16))
+    }
+
     private fun assertResting() {
         assertFalse(motion().isRunning)
         for (i in 0 until track.childCount) assertEquals(0f, track.getChildAt(i).translationY, .001f)
@@ -84,7 +90,7 @@ class HomeLyricsMotionIntegrationTest {
         home.setActive(false)
         val stopped = scroll.scrollY
         assertResting()
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1000))
+        advanceFrames()
         assertEquals(stopped, scroll.scrollY)
         assertResting()
     }
@@ -99,7 +105,7 @@ class HomeLyricsMotionIntegrationTest {
         scroll.scrollTo(0, scroll.scrollY + 20)
         val manual = scroll.scrollY
         home.setSnapshot(snapshot.copy(positionMs = 6000L))
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1000))
+        advanceFrames()
         assertEquals(manual, scroll.scrollY)
         assertResting()
         val up = MotionEvent.obtain(now, now + 1000L, MotionEvent.ACTION_UP, 100f, 100f, 0)
@@ -113,7 +119,7 @@ class HomeLyricsMotionIntegrationTest {
         val target = scroll.scrollY
         assertResting()
         assertEquals(1f, track.getChildAt(8).alpha, 0f)
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1000))
+        advanceFrames()
         assertEquals(target, scroll.scrollY)
         assertResting()
     }
@@ -131,7 +137,7 @@ class HomeLyricsMotionIntegrationTest {
         startTransition()
         (home.parent as ViewGroup).removeView(home)
         assertResting()
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1000))
+        advanceFrames()
         assertResting()
     }
 }
