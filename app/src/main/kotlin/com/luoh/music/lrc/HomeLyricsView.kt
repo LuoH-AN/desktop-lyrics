@@ -1,6 +1,5 @@
 package com.luoh.music.lrc
 
-import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
@@ -14,7 +13,6 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
-import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -76,7 +74,6 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     private var wideLayout = false
     private var lastProgressPaint = 0L
     private var manualScrollUntil = 0L
-    private var scrollAnimation: ValueAnimator? = null
     private var menu: BottomSheetDialog? = null
     private val lyricRows = mutableListOf<LyricLineView>()
 
@@ -98,9 +95,12 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         overScrollMode = View.OVER_SCROLL_NEVER
         clipToPadding = false
     }
+    private val lyricMotion = HomeLyricMotion(scroll, lyricRows)
     private val lyricsTrack = LinearLayout(context).apply {
         id = R.id.home_lyrics_track
         orientation = VERTICAL
+        clipChildren = false
+        clipToPadding = false
     }
     private val emptyPanel = LinearLayout(context).apply {
         orientation = VERTICAL
@@ -266,7 +266,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         })
         scroll.setOnTouchListener { _, event ->
             if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_MOVE) {
-                scrollAnimation?.cancel()
+                lyricMotion.cancel()
                 manualScrollUntil = SystemClock.uptimeMillis() + 4000L
             }
             false
@@ -425,8 +425,8 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         removeCallbacks(frame)
         if (on && isAttachedToWindow) postOnAnimation(frame)
         else {
-            scrollAnimation?.cancel()
-            lyricRows.forEach { it.animate().cancel() }
+            lyricMotion.cancel()
+            activeIndex = -2
         }
     }
 
@@ -437,8 +437,8 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
 
     override fun onDetachedFromWindow() {
         removeCallbacks(frame)
-        scrollAnimation?.cancel()
-        lyricRows.forEach { it.animate().cancel() }
+        lyricMotion.cancel()
+        activeIndex = -2
         menu?.dismiss()
         menu = null
         super.onDetachedFromWindow()
@@ -518,7 +518,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     }
 
     private fun renderLines() {
-        scrollAnimation?.cancel()
+        lyricMotion.cancel()
         lyricsTrack.removeAllViews()
         lyricRows.clear()
         activeIndex = -2
@@ -559,18 +559,14 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         val resumeFollowing = manualScrollUntil != 0L && now >= manualScrollUntil
         if (resumeFollowing) manualScrollUntil = 0L
         if (activeIndex != index || resumeFollowing) {
-            lyricRows.getOrNull(activeIndex)?.setPlaybackPosition(position)
+            val previousIndex = activeIndex
+            lyricRows.getOrNull(previousIndex)?.setPlaybackPosition(position)
             activeIndex = index
-            lyricRows.forEachIndexed { i, row ->
-                val distance = if (index < 0) i + 1 else abs(i - index)
-                val scale = when (distance) { 0 -> 1f; 1 -> .92f; 2 -> .87f; else -> .82f }
-                val opacity = when (distance) { 0 -> 1f; 1 -> .7f; 2 -> .55f; 3 -> .4f; else -> .26f }
-                row.pivotX = 0f
-                row.pivotY = row.height / 2f
-                if (active) row.animate().scaleX(scale).scaleY(scale).alpha(opacity).setDuration(380L).start()
-                else { row.scaleX = scale; row.scaleY = scale; row.alpha = opacity }
-            }
-            if (manualScrollUntil == 0L) centerLine(index.coerceAtLeast(0))
+            val following = manualScrollUntil == 0L
+            val target = if (following) lineScrollTarget(index.coerceAtLeast(0)) else null
+            val animate = active && isAttachedToWindow && ViewCompat.isLaidOut(this) &&
+                previousIndex != -2 && abs(index - previousIndex) <= 3 && following
+            lyricMotion.moveTo(index, target, animate)
         }
         lyricRows.getOrNull(index)?.setPlaybackPosition(position)
         renderInterlude(position, index)
@@ -580,21 +576,13 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         }
     }
 
-    private fun centerLine(index: Int) {
-        val row = lyricRows.getOrNull(index) ?: return
+    private fun lineScrollTarget(index: Int): Int? {
+        val row = lyricRows.getOrNull(index) ?: return null
         if (row.height == 0 || stage.height == 0) {
             activeIndex = -2
-            return
+            return null
         }
-        val target = (row.top + row.height / 2 - (stage.height * .42f).toInt()).coerceAtLeast(0)
-        scrollAnimation?.cancel()
-        if (!active || !ViewCompat.isLaidOut(this)) scroll.scrollTo(0, target)
-        else scrollAnimation = ValueAnimator.ofInt(scroll.scrollY, target).apply {
-            duration = 600L
-            interpolator = DecelerateInterpolator()
-            addUpdateListener { scroll.scrollTo(0, it.animatedValue as Int) }
-            start()
-        }
+        return (row.top + row.height / 2 - (stage.height * .42f).toInt()).coerceAtLeast(0)
     }
 
     private fun renderInterlude(positionMs: Long, index: Int) {
@@ -607,7 +595,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         interlude.visibility = if (visible) VISIBLE else GONE
         if (visible) {
             val anchor = lyricRows.getOrNull(index.coerceAtLeast(0)) ?: return
-            interlude.translationY = (anchor.bottom - scroll.scrollY + dp(2)).toFloat()
+            interlude.translationY = anchor.bottom - scroll.scrollY + anchor.translationY + dp(2)
             val ratio = ((positionMs - gapStart).toFloat() / (gapEnd - gapStart)).coerceIn(0f, 1f)
             interlude.alpha = .35f + ratio * .65f
         }

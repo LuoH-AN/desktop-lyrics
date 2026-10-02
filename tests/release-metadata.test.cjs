@@ -5,7 +5,7 @@ const gradle = read('app/build.gradle.kts');
 const version = /versionName = "([^"]+)"/.exec(gradle)[1];
 const code = Number(/versionCode = (\d+)/.exec(gradle)[1]);
 assert.match(version, /^\d+\.\d+\.\d+$/, 'stable version must be x.y.z');
-assert.ok(code > 11, 'versionCode must upgrade the published 1.0.0 build');
+assert.ok(code > 12, 'versionCode must upgrade the published 1.0.1 build');
 assert.ok(gradle.includes('applicationId = "com.luoh.music.lrc"'));
 for (const file of ['README.md', 'README_EN.md']) {
   const text = read(file);

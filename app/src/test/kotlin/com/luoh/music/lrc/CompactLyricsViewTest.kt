@@ -121,6 +121,26 @@ class CompactLyricsViewTest {
         draw(view)
     }
 
+    @Test fun allLyricRowsStayCrispWithoutShadows() {
+        val view = CompactLyricsView(context())
+        view.setPlayback("crisp", 1000L, 4000L, false, 1f)
+        view.setDocument(LyricDocument(listOf(
+            LyricLine(0, "Before"),
+            LyricLine(1000, "Current", "当前", words = listOf(LyricWord(1000, 1000, "Current"))),
+            LyricLine(2000, "After")
+        ), true))
+        for (color in listOf(Color.WHITE, Color.BLACK, Color.CYAN)) {
+            view.setAppearance(100, color, "bilingual", 1, 1)
+            draw(view)
+            assertEquals(4, view.childCount)
+            for (index in 0 until view.childCount) {
+                val text = (view.getChildAt(index) as ViewGroup).getChildAt(0) as MaterialTextView
+                assertEquals(0f, text.shadowRadius, 0f)
+                assertFalse("Current, translated and context rows must not glow", text.paint.hasShadowLayer())
+            }
+        }
+    }
+
     @Test fun documentBridgeKeepsWordsAndToleratesMissingOptionalFields() {
         val result = requireNotNull(OverlayNativeDocument.parse("""
             {"requestId":7,"key":"song","track":"Song","artist":"Artist","durationMs":10000,

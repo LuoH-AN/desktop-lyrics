@@ -217,10 +217,7 @@ class CompactLyricsView @JvmOverloads constructor(context: Context, attrs: Attri
                 textSize = textSp
                 typeface = OverlayAppearance.typeface(fontWeight)
                 setTextColor(lyricColor)
-                // A glyph-only shadow keeps transparent lyrics legible without adding a backdrop.
-                val shadow = if (androidx.core.graphics.ColorUtils.calculateLuminance(lyricColor) > .5) Color.BLACK else Color.WHITE
-                setShadowLayer(1.5f * resources.displayMetrics.density, 0f, .5f * resources.displayMetrics.density,
-                    androidx.core.graphics.ColorUtils.setAlphaComponent(shadow, 180))
+                setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT)
                 includeFontPadding = false
                 setPadding(0, 0, 0, 0)
                 setSingleLine(true)
