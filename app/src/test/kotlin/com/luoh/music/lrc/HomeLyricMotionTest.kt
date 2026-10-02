@@ -76,7 +76,7 @@ class HomeLyricMotionTest {
         }
         scroll.addView(track)
         controller.get().setContentView(scroll)
-        shadowOf(Looper.getMainLooper()).idle()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16))
         scroll.measure(View.MeasureSpec.makeMeasureSpec(dp(320), View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(dp(480), View.MeasureSpec.EXACTLY))
         scroll.layout(0, 0, dp(320), dp(480))

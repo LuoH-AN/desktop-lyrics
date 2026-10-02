@@ -47,7 +47,7 @@ class HomeLyricsMotionIntegrationTest {
             home.measure(View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(640, View.MeasureSpec.EXACTLY))
             home.layout(0, 0, 320, 640)
-            shadowOf(Looper.getMainLooper()).idle()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16))
         }
         scroll = home.findViewById(R.id.home_lyrics_scroll)
         track = home.findViewById(R.id.home_lyrics_track)
