@@ -5,7 +5,7 @@
 
 简洁的 Android 桌面歌词应用，由 [LuoH-AN](https://github.com/LuoH-AN) 维护。
 
-[下载 1.0.0](https://github.com/LuoH-AN/desktop-lyrics/releases/tag/v1.0.0) · [反馈问题](https://github.com/LuoH-AN/desktop-lyrics/issues) · [English](README_EN.md)
+[下载正式版](https://github.com/LuoH-AN/desktop-lyrics/releases/latest) · [反馈问题](https://github.com/LuoH-AN/desktop-lyrics/issues) · [English](README_EN.md)
 
 </div>
 
@@ -23,6 +23,6 @@
 
 ## 项目信息
 
-正式版：**1.0.0** · 包名：`com.luoh.music.lrc`
+当前源码：**1.0.1** · 包名：`com.luoh.music.lrc`
 
 [隐私说明](PRIVACY.md) · [更新记录](CHANGELOG.md) · [开发与发布](docs/releasing.md) · [来源与致谢](NOTICE.md)

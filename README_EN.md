@@ -5,7 +5,7 @@
 
 A minimal Android lyrics app maintained by [LuoH-AN](https://github.com/LuoH-AN).
 
-[Download 1.0.0](https://github.com/LuoH-AN/desktop-lyrics/releases/tag/v1.0.0) · [Report an issue](https://github.com/LuoH-AN/desktop-lyrics/issues) · [简体中文](README.md)
+[Download release](https://github.com/LuoH-AN/desktop-lyrics/releases/latest) · [Report an issue](https://github.com/LuoH-AN/desktop-lyrics/issues) · [简体中文](README.md)
 
 </div>
 
@@ -21,6 +21,6 @@ Requires Android 8.0+, a 64-bit ARM device, Android System WebView, and a player
 
 ## Project
 
-Release: **1.0.0** · Package: `com.luoh.music.lrc`
+Source version: **1.0.1** · Package: `com.luoh.music.lrc`
 
 [Privacy](PRIVACY.md) · [Changelog](CHANGELOG.md) · [Development and releases](docs/releasing.md) · [Credits](NOTICE.md)
