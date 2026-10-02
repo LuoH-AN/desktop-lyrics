@@ -71,7 +71,10 @@ class MaterialUiLayoutTest {
     }
 
     private fun boundsIn(root: ViewGroup, view: View): android.graphics.Rect =
-        android.graphics.Rect(0, 0, view.width, view.height).also { root.offsetDescendantRectToMyCoords(view, it) }
+        android.graphics.Rect().also {
+            view.getDrawingRect(it)
+            root.offsetDescendantRectToMyCoords(view, it)
+        }
 
     private fun assertNativeSettings(preview: String) {
         val root = LayoutInflater.from(context()).inflate(R.layout.activity_settings, null)
@@ -290,7 +293,8 @@ class MaterialUiLayoutTest {
             val density = root.resources.displayMetrics.density
             assertEquals("Save must be vertically centered", toolbarBounds.exactCenterY(), saveBounds.exactCenterY(), 1f)
             assertTrue("Save must retain a trailing safe margin", saveBounds.right <= toolbarBounds.right - 12 * density)
-            assertTrue("Save must fit inside the toolbar", saveBounds.top >= toolbarBounds.top && saveBounds.bottom <= toolbarBounds.bottom)
+            assertTrue("Save must fit inside the toolbar", saveBounds.left >= toolbarBounds.left &&
+                saveBounds.top >= toolbarBounds.top && saveBounds.bottom <= toolbarBounds.bottom)
             assertTrue("Save must retain a full touch target", save.width >= 48 * density && save.height >= 48 * density)
             val toolbarTitle = descendants(toolbar).filterIsInstance<android.widget.TextView>()
                 .single { it.text == toolbar.title }
