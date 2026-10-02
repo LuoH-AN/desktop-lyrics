@@ -61,6 +61,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     }
 
     var actions: Actions? = null
+    var onTranslationSettings: (() -> Unit)? = null
     private val clock = LyricClock()
     private var snapshot = Snapshot()
     private var document = LyricDocument(emptyList(), true)
@@ -158,6 +159,17 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         maxLines = 1
         ellipsize = TextUtils.TruncateAt.END
     }
+    private val translationStatus = label("", 12f).apply {
+        tag = "home_translation_status"
+        visibility = GONE
+        minHeight = dp(48)
+        maxLines = 2
+        ellipsize = TextUtils.TruncateAt.END
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, dp(8), 0, dp(8))
+        setOnClickListener { onTranslationSettings?.invoke() }
+        ViewCompat.setAccessibilityLiveRegion(this, ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE)
+    }
     private val overlay = iconButton(R.drawable.ic_home_lyrics, "显示桌面歌词").apply {
         id = R.id.home_overlay
         setOnClickListener { actions?.toggleOverlay() }
@@ -238,6 +250,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         metadata.addView(text, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(12) })
         metadata.addView(utilities, LayoutParams(LayoutParams.WRAP_CONTENT, dp(48)).apply { marginStart = dp(4) })
         bar.addView(metadata, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        bar.addView(translationStatus, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         bar.addView(progress, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)))
         val times = LinearLayout(context).apply { setPadding(dp(16), 0, dp(16), 0) }
         times.addView(timeCurrent, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
@@ -378,6 +391,12 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         renderEmpty()
     }
 
+    fun setTranslationStatus(message: String) {
+        if (translationStatus.text.toString() == message) return
+        translationStatus.text = message
+        translationStatus.visibility = if (message.isBlank()) GONE else VISIBLE
+    }
+
     fun setTranslationMode(mode: String) {
         val normalized = if (mode == "original" || mode == "translated") mode else "bilingual"
         if (normalized == translationMode) return
@@ -432,6 +451,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         playerCard.setCardBackgroundColor(color(R.color.app_surface))
         song.setTextColor(primary)
         artist.setTextColor(secondary)
+        translationStatus.setTextColor(secondary)
         empty.setTextColor(primary)
         emptyDetail.setTextColor(secondary)
         emptyIconTile.setCardBackgroundColor(color(R.color.app_surface_container))

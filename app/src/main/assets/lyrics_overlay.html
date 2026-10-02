@@ -538,14 +538,14 @@
         ++supplementEpoch;
         if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.cancelSupplement)window.LobstaNativeLyrics.cancelSupplement();
       }
-      if(translationMode==='original'||currentHasOfficialTranslation||!playback.lyrics.length)return;
+      if(translationMode==='original'||!playback.lyrics.length)return;
       if(nativeRendering) supplementDueAt=performance.now()+(reset?520:80);
       else supplementRequestTimer=setTimeout(startSupplementWindow,reset?520:80);
     }
 
     function startSupplementWindow() {
       supplementRequestTimer=0;
-      if(supplementInFlight||translationMode==='original'||currentHasOfficialTranslation||!playback.lyrics.length)return;
+      if(supplementInFlight||translationMode==='original'||!playback.lyrics.length)return;
       const active=plainPlaybackIndex();
       let strategy={behind:2,ahead:12,prefetch:4};
       if(window.LobstaNativeLyrics&&window.LobstaNativeLyrics.supplementStrategy){
@@ -574,18 +574,25 @@
     }
 
     function maybePrefetchSupplement() {
-      if(supplementInFlight||supplementRequestTimer||supplementDueAt||translationMode==='original'||currentHasOfficialTranslation)return;
+      if(supplementInFlight||supplementRequestTimer||supplementDueAt||translationMode==='original')return;
       if(supplementWindowEnd<0||plainPlaybackIndex()>=supplementWindowEnd-supplementPrefetchRemaining)requestSupplement(false);
     }
 
     function receiveSupplement(epoch,data) {
-      if(epoch!==supplementEpoch||currentHasOfficialTranslation||!data)return;
+      if(epoch!==supplementEpoch||!data)return;
       if(data.status){
         const any=playback.lyrics.find(line=>line.supplement);
         const failed=data.status==='error';
         if(data.status==='done'||data.status==='off'||failed) supplementInFlight=false;
         if(nativeRendering){
-          if(data.status==='off') supplementWindowEnd=playback.lyrics.length+48;
+          if(window.LobstaNativeLyrics.reportSupplementStatus){
+            window.LobstaNativeLyrics.reportSupplementStatus(JSON.stringify({
+              requestId:playback.requestId,track:playback.track,artist:playback.artist,
+              status:data.status,message:data.message||''
+            }));
+          }
+          // Configuration errors wait for an explicit settings refresh, rather than retrying every tick.
+          if(data.status==='off'||failed) supplementWindowEnd=playback.lyrics.length+48;
           else if(data.status==='done') maybePrefetchSupplement();
           return;
         }

@@ -21,7 +21,7 @@ class Element {
   set innerHTML(value) { this.children = []; }
 }
 const elements = new Map();
-const documents = [], requests = [], translations = [], cache = new Map();
+const documents = [], requests = [], translations = [], translationStatuses = [], cache = new Map();
 let custom = '', now = 0, animationFrames = 0, timers = 0, cancellations = 0;
 const context = {
   console, AbortController, TextEncoder,
@@ -47,6 +47,7 @@ const context = {
     requestLyrics: (...args) => requests.push(args),
     cancelSupplement: () => cancellations++,
     supplementStrategy: () => JSON.stringify({ behind: 2, ahead: 12, prefetch: 4 }),
+    reportSupplementStatus: payload => translationStatuses.push(JSON.parse(payload)),
     translateMissing: (epoch, payload) => translations.push({ epoch, rows: JSON.parse(payload) })
   }
 };
@@ -105,4 +106,36 @@ assert.equal(documents.at(-1).lines[0].text, 'my lyrics');
 assert.equal(documents.at(-1).durationMs, 9000, 'fallback duration accompanies the emitted document');
 assert.equal(animationFrames, 0);
 assert.equal(timers, 0);
-console.log('PASS: hidden overlay engine emits native documents without rAF/timers; word timing, translation tick, custom priority, stale-response and session guards');
+custom = '';
+engine.updatePlayback({ ...snapshot, track: 'PartialOfficial' });
+engine.receiveLyrics(requests.at(-1)[4], {
+  source: 'QQ音乐', lyrics: '[00:00.00]hello\n[00:02.00]world\n[00:04.00]again',
+  translatedLyrics: '[00:00.00]你好'
+});
+const beforePartial = translations.length;
+now += 600;
+engine.engineTick();
+assert.equal(translations.length, beforePartial + 1, 'partial official translation must not disable missing-line supplementation');
+assert.deepEqual(translations.at(-1).rows.map(row => row.id), [1, 2]);
+const partialEpoch = translations.at(-1).epoch;
+engine.receiveSupplement(partialEpoch, { id: 0, text: 'wrong overwrite', source: '机翻' });
+assert.equal(documents.at(-1).lines[0].translation, '你好', 'official translation cannot be overwritten');
+engine.receiveSupplement(partialEpoch, { id: 1, text: '世界', source: '机翻' });
+assert.equal(documents.at(-1).lines[1].translation, '世界');
+engine.receiveSupplement(partialEpoch, { status: 'error', message: '请先下载中文语言包' });
+assert.equal(translationStatuses.at(-1).message, '请先下载中文语言包', 'native users must receive actionable translation failures');
+assert.equal(translationStatuses.at(-1).track, 'PartialOfficial');
+const beforeErrorTick = translations.length;
+now += 20000;
+engine.engineTick();
+assert.equal(translations.length, beforeErrorTick, 'configuration errors must not retry on every service tick');
+const beforeStaleStatus = translationStatuses.length;
+engine.receiveSupplement(partialEpoch - 1, { status: 'error', message: 'old error' });
+assert.equal(translationStatuses.length, beforeStaleStatus);
+engine.setTranslationMode('original');
+engine.updatePlayback({ ...snapshot, track: 'OriginalOnly' });
+engine.receiveLyrics(requests.at(-1)[4], { source: 'LRCLIB', lyrics: '[00:00.00]hello' });
+now += 600;
+engine.engineTick();
+assert.equal(translations.length, beforeErrorTick, 'original-only mode must never request machine translation');
+console.log('PASS: native lyric engine, partial official translations, visible translation failures, stale callbacks, custom priority, and no hidden timers');

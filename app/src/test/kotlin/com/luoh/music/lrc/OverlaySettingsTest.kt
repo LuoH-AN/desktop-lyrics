@@ -112,6 +112,9 @@ class OverlaySettingsTest {
     }
 
     @Test fun homeThemeChangeKeepsTheLyricViewsAndPlaybackMetadata() {
+        // Robolectric does not grant AndroidX's generated signature permission to the test app.
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        org.robolectric.Shadows.shadowOf(app).grantPermissions("${app.packageName}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
         val controller = Robolectric.buildActivity(MainActivity::class.java).create().start().visible()
         try {
             val activity = controller.get()

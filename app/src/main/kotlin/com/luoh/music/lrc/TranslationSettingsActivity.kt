@@ -41,6 +41,29 @@ class TranslationSettingsActivity : AppCompatActivity() {
     private lateinit var apiProfileButton: MaterialButton
     private var currentApiProfileId = "glm"
     private lateinit var status: TextView
+    private lateinit var lastTranslationStatus: TextView
+    private val translationStatusListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "last_status" || key == "last_track") updateLastTranslationStatus()
+    }
+
+    private fun updateLastTranslationStatus() {
+        if (!::lastTranslationStatus.isInitialized) return
+        val value = prefs.getString("last_status", "").orEmpty()
+        val track = prefs.getString("last_track", "").orEmpty()
+        lastTranslationStatus.text = if (value.isBlank()) "" else if (track.isBlank()) value else "《$track》 · $value"
+        lastTranslationStatus.visibility = if (value.isBlank()) View.GONE else View.VISIBLE
+    }
+
+    override fun onStart() {
+        super.onStart()
+        prefs.registerOnSharedPreferenceChangeListener(translationStatusListener)
+        updateLastTranslationStatus()
+    }
+
+    override fun onStop() {
+        prefs.unregisterOnSharedPreferenceChangeListener(translationStatusListener)
+        super.onStop()
+    }
     private lateinit var apiVerifyButton: MaterialButton
     private lateinit var downloadProgress: LinearProgressIndicator
     private val apiExecutor = Executors.newSingleThreadExecutor()
@@ -132,6 +155,12 @@ class TranslationSettingsActivity : AppCompatActivity() {
             currentApiProfileId = TranslationApiProfiles.find(this, prefs.getString("active_api_profile", null)).id
         }
         val content = NativeUi.screen(this, "补充翻译")
+        content.addView(label("双语只控制显示；需要机翻时，请选择下面的补充方式。", 12f))
+        lastTranslationStatus = label("", 12f).apply {
+            visibility = View.GONE
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        content.addView(lastTranslationStatus)
         val settingsCard = NativeUi.column(this)
         settingsCard.addView(label("翻译方式", 19f))
         selectedMode = listOf("off", "offline", "api").indexOf(prefs.getString("mode", "off")).coerceAtLeast(0)

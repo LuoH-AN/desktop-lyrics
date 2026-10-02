@@ -64,6 +64,27 @@ class MainActivity : AppCompatActivity() {
     private val repository = DirectLyricsRepository()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioScope = CoroutineScope(Dispatchers.IO + Job())
+    private val translationScope = CoroutineScope(Dispatchers.Main.immediate + Job())
+    private val supplements by lazy { SupplementTranslation(this) }
+    private var homeForeground = false
+    private var baseLyricDocument = LyricDocument(emptyList(), true)
+    private var currentLyricsCustom = false
+    private val homeTranslation by lazy {
+        HomeTranslationController(translationScope, { missing ->
+            val payload = org.json.JSONArray().apply {
+                missing.forEach { put(JSONObject().put("id", it.id).put("text", it.text)) }
+            }
+            val translated = mutableMapOf<Int, String>()
+            supplements.translate(payload.toString()) { row ->
+                translated[row.optInt("id", -1)] = row.optString("text")
+            }
+            translated
+        }, { document -> home.setLyrics(document, currentLyricsCustom) }, { status ->
+            home.setTranslationStatus(status)
+            getSharedPreferences("supplement_translation", Context.MODE_PRIVATE).edit()
+                .putString("last_status", status).putString("last_track", currentTrack).apply()
+        })
+    }
 
     private var controller: MediaController? = null
     private var lastTrackKey = ""
@@ -111,6 +132,7 @@ class MainActivity : AppCompatActivity() {
 
         home = findViewById(R.id.lyric_home)
         home.actions = HomeActions()
+        home.onTranslationSettings = { startActivity(Intent(this, TranslationSettingsActivity::class.java)) }
         gate = findViewById(R.id.gate_overlay)
         gateStatus = findViewById(R.id.gate_status)
         appliedNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
@@ -187,6 +209,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        homeForeground = true
         ThemePrefs.apply(appPrefs.getString(ThemePrefs.KEY, ThemePrefs.FOLLOW))
         home.applyTheme()
         home.setActive(true)
@@ -198,6 +221,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        homeForeground = false
+        homeTranslation.cancel()
         mainHandler.removeCallbacks(progressTick)
         stopSessionMonitor()
         home.setActive(false)
@@ -206,6 +231,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         if (::themeTransition.isInitialized) themeTransition.dispose()
+        homeTranslation.cancel()
+        translationScope.coroutineContext[Job]?.cancel()
         ioScope.coroutineContext[Job]?.cancel()
         super.onDestroy()
     }
@@ -337,6 +364,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearTrackState() {
+        homeTranslation.cancel()
+        baseLyricDocument = LyricDocument(emptyList(), true)
+        home.setTranslationStatus("")
         if (lastTrackKey.isNotEmpty()) lyricRequestId++
         lastTrackKey = ""
         currentTrack = ""
@@ -375,6 +405,9 @@ class MainActivity : AppCompatActivity() {
         val key = "$title\u0000$artist\u0000$album"
         val trackChanged = title.isNotBlank() && key != lastTrackKey
         if (trackChanged) {
+            homeTranslation.cancel()
+            baseLyricDocument = LyricDocument(emptyList(), true)
+            home.setTranslationStatus("")
             lastTrackKey = key
             currentTrack = title
             currentArtist = artist
@@ -468,12 +501,11 @@ class MainActivity : AppCompatActivity() {
         currentLyricTitle = currentTrack
         currentLyricArtist = currentArtist
         currentLyricIdentity = "$currentTrack\u0000$currentArtist".trim().lowercase(java.util.Locale.ROOT)
-        if (payload.isBlank) {
-            home.setLyrics(LyricDocument(emptyList(), true))
-            return
-        }
-        val custom = payload.source == CustomLyricsStore.SOURCE
-        home.setLyrics(LyricParser.parse(payload.lyrics, payload.translated, payload.word), custom)
+        currentLyricsCustom = payload.source == CustomLyricsStore.SOURCE
+        baseLyricDocument = if (payload.isBlank) LyricDocument(emptyList(), true)
+            else LyricParser.parse(payload.lyrics, payload.translated, payload.word)
+        home.setLyrics(baseLyricDocument, currentLyricsCustom)
+        refreshHomeTranslation()
         applyLyricOffset()
     }
 
@@ -569,6 +601,16 @@ class MainActivity : AppCompatActivity() {
             // 其它情况只重新应用偏移
             else -> applyLyricOffset()
         }
+        refreshHomeTranslation()
+    }
+
+    private fun refreshHomeTranslation() {
+        if (!homeForeground) return
+        val display = overlayPrefs.getString(LyricsOverlayService.PREF_TRANSLATION_MODE,
+            LyricsOverlayService.TRANSLATION_BILINGUAL).orEmpty()
+        val translationPrefs = getSharedPreferences("supplement_translation", Context.MODE_PRIVATE)
+        homeTranslation.update(lastTrackKey, baseLyricDocument, display,
+            translationPrefs.getString("mode", "off").orEmpty())
     }
 
     /**

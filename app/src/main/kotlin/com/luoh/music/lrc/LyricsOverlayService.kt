@@ -402,6 +402,30 @@ class LyricsOverlayService : Service() {
         }
 
         @JavascriptInterface
+        fun reportSupplementStatus(payload: String) {
+            if (payload.length > 4000) return
+            val data = runCatching { JSONObject(payload) }.getOrNull() ?: return
+            mainHandler.post {
+                if (nativeTrack.isBlank() || data.optString("track") != nativeTrack ||
+                    data.optString("artist") != nativeArtist ||
+                    data.optInt("requestId", -1) != nativeDocumentRequestId) return@post
+                val status = data.optString("status")
+                val message = when (status) {
+                    "working" -> "正在补充译文"
+                    "done" -> "补充翻译已完成"
+                    "off" -> "补充翻译未开启；双语模式只显示已有译文"
+                    "error" -> data.optString("message").take(180).ifBlank { "补充翻译失败，请检查配置" }
+                    else -> return@post
+                }
+                getSharedPreferences("supplement_translation", Context.MODE_PRIVATE).edit()
+                    .putString("last_status", message).putString("last_track", nativeTrack).apply()
+                if (status == "error") android.widget.Toast.makeText(
+                    this@LyricsOverlayService, message, android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+        @JavascriptInterface
         fun setCompactContentState(hasLyrics: Boolean, hasTranslation: Boolean) {
             mainHandler.post {
                 if (compactHasLyrics == hasLyrics && compactHasTranslation == hasTranslation) return@post
