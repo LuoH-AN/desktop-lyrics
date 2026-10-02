@@ -29,7 +29,6 @@ class CustomLyricsManagerActivity : AppCompatActivity() {
 
     private fun render() {
         content.removeAllViews()
-        content.addView(NativeUi.text(this, "获取不到歌词时，手动指定一份标准 LRC 时间轴歌词。按歌名+歌手匹配，命中后主页和悬浮窗都直接使用这份。", 12f))
         NowPlaying.current(this)?.let { track ->
             val existing = CustomLyricsStore.find(this, track.title, track.artist)
             val body = NativeUi.column(this)

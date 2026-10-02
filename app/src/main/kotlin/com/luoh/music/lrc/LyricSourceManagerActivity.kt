@@ -51,7 +51,6 @@ class LyricSourceManagerActivity : AppCompatActivity() {
     }
     private fun render() {
         content.removeAllViews()
-        content.addView(label("按歌曲整理尝试过的歌词版本，选择来源后可预览与切换。记录持续保留，可随时手动清理。", 13f))
         if (message.isNotBlank()) content.addView(label(message, 14f))
         val values = entries()
         val entry = values.find { it.optString("key") == selected }
@@ -65,7 +64,6 @@ class LyricSourceManagerActivity : AppCompatActivity() {
                 isEnabled = !busy && (values.isNotEmpty() ||
                     getSharedPreferences("home_lyric_cache_v1", Context.MODE_PRIVATE).all.isNotEmpty())
             })
-            content.addView(label("包括手动选定的版本和历史记录；自定义歌词、翻译语言包与同步设置不受影响。", 12f))
             fun fillSongs() {
                 list.removeAllViews()
                 val groups = values.asReversed().groupBy {
@@ -99,8 +97,6 @@ class LyricSourceManagerActivity : AppCompatActivity() {
             return
         }
         val key = entry.optString("key")
-        if (entry.optBoolean("needsReview")) content.addView(label("这是旧版保存的选择，暂不自动应用，请核对歌词后重新选用或删除。", 14f))
-        else if (entry.optBoolean("auto")) content.addView(label("这是主页自动匹配写入的记录，还没有手动固定。选用某个版本后即固定，悬浮窗与主页都以它为准。", 14f))
         content.addView(label(entry.optString("title"), 20f))
         content.addView(button(if (busy) "正在搜索…" else "搜索下一个匹配结果（仅预览）") { search(entry) }.apply { isEnabled = !busy })
         entry.optJSONObject("original")?.let { original ->

@@ -63,6 +63,16 @@ class MaterialUiLayoutTest {
         host.pause().stop().destroy()
     }
 
+    private fun descendants(view: View): Sequence<View> = sequence {
+        yield(view)
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) yieldAll(descendants(view.getChildAt(index)))
+        }
+    }
+
+    private fun boundsIn(root: ViewGroup, view: View): android.graphics.Rect =
+        android.graphics.Rect(0, 0, view.width, view.height).also { root.offsetDescendantRectToMyCoords(view, it) }
+
     private fun assertNativeSettings(preview: String) {
         val root = LayoutInflater.from(context()).inflate(R.layout.activity_settings, null)
         layout(root, preview = preview)
@@ -125,7 +135,8 @@ class MaterialUiLayoutTest {
         val panel = home.findViewById<MaterialCardView>(R.id.home_player_card)
         assertTrue(panel.radius >= 24 * home.resources.displayMetrics.density)
         assertTrue(panel.width < home.width)
-        assertTrue(home.findViewById<View>(R.id.home_toolbar) is MaterialToolbar)
+        assertFalse("Home must not reserve space for a toolbar", descendants(home).any { it is MaterialToolbar })
+        assertFalse("Playback status chip must be removed", descendants(home).any { it is com.google.android.material.chip.Chip })
         val mainPlay = home.findViewById<MaterialButton>(R.id.home_play)
         assertEquals(255, android.graphics.Color.alpha(mainPlay.backgroundTintList!!.defaultColor))
         assertEquals(0, mainPlay.strokeWidth)
@@ -140,6 +151,35 @@ class MaterialUiLayoutTest {
         assertEquals(more.height, overlay.height)
         assertEquals(more.top, overlay.top)
         assertEquals(more.iconSize, overlay.iconSize)
+        val cover = home.findViewById<View>(R.id.home_cover)
+        val song = home.findViewById<View>(R.id.home_song)
+        val metadataText = song.parent as View
+        val coverBounds = boundsIn(home, cover)
+        val textBounds = boundsIn(home, metadataText)
+        val overlayBounds = boundsIn(home, overlay)
+        val moreBounds = boundsIn(home, more)
+        assertEquals("Cover and actions must align vertically", coverBounds.exactCenterY(), overlayBounds.exactCenterY(), 1f)
+        assertEquals("Song metadata and actions must align vertically", textBounds.exactCenterY(), overlayBounds.exactCenterY(), 1f)
+        assertTrue("Song metadata must retain readable space", song.width >= 64 * home.resources.displayMetrics.density)
+        assertTrue("Cover must not overlap song metadata", coverBounds.right <= textBounds.left)
+        assertTrue("Song metadata must not overlap actions", textBounds.right <= overlayBounds.left)
+        assertTrue("Actions must not overlap", overlayBounds.right <= moreBounds.left)
+        assertTrue("Actions must remain inside the player", moreBounds.right <= boundsIn(home, panel).right - 16 * home.resources.displayMetrics.density)
+        assertTrue("Cover placeholder must retain its visible size", cover.width - cover.paddingLeft - cover.paddingRight >= 24 * home.resources.displayMetrics.density)
+        val slider = home.findViewById<Slider>(R.id.home_progress)
+        assertEquals((6 * home.resources.displayMetrics.density).toInt(), slider.trackHeight)
+        assertEquals(3 * home.resources.displayMetrics.density, slider.thumbStrokeWidth, 1f)
+        slider.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DPAD_RIGHT))
+        assertEquals("Styled slider must preserve keyboard seeking", 15000L, actions.seekPosition)
+        val downTime = android.os.SystemClock.uptimeMillis()
+        listOf(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_MOVE, android.view.MotionEvent.ACTION_UP)
+            .forEachIndexed { index, action ->
+                val x = slider.width * if (index == 0) .35f else .5f
+                val event = android.view.MotionEvent.obtain(downTime, downTime + index * 16L, action, x, slider.height / 2f, 0)
+                slider.dispatchTouchEvent(event)
+                event.recycle()
+            }
+        assertTrue("Styled slider must preserve drag seeking", actions.seekPosition in 49000L..51000L)
         assertTrue("Material padding must not clip the lyric icon", overlay.paddingStart + overlay.paddingEnd + overlay.iconSize <= overlay.width)
         assertTrue("Material padding must not clip the more icon", more.paddingStart + more.paddingEnd + more.iconSize <= more.width)
         assertEquals(0, overlay.strokeWidth)
@@ -228,6 +268,50 @@ class MaterialUiLayoutTest {
             dialog.dismiss()
             host.pause().stop().destroy()
         }
+    }
+
+    private fun assertLyricEditor(preview: String, editing: Boolean = false) {
+        val context = context()
+        val title = "布局测试歌曲"
+        val artist = "测试歌手"
+        val lyrics = "[00:01.00]保存后的歌词"
+        val existing = if (editing) CustomLyricsStore.save(context, title, artist, "[00:00.00]原歌词") else null
+        val intent = if (existing != null) CustomLyricsEditActivity.editIntent(context, existing.id)
+            else CustomLyricsEditActivity.intent(context, title, artist)
+        val controller = org.robolectric.Robolectric.buildActivity(CustomLyricsEditActivity::class.java, intent).setup()
+        try {
+            val activity = controller.get()
+            val root = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
+            layout(root, preview = preview)
+            val toolbar = descendants(root).filterIsInstance<MaterialToolbar>().single()
+            val save = descendants(toolbar).filterIsInstance<MaterialButton>().single { it.text.toString() == "保存" }
+            val saveBounds = boundsIn(root, save)
+            val toolbarBounds = boundsIn(root, toolbar)
+            val density = root.resources.displayMetrics.density
+            assertEquals("Save must be vertically centered", toolbarBounds.exactCenterY(), saveBounds.exactCenterY(), 1f)
+            assertTrue("Save must retain a trailing safe margin", saveBounds.right <= toolbarBounds.right - 12 * density)
+            assertTrue("Save must fit inside the toolbar", saveBounds.top >= toolbarBounds.top && saveBounds.bottom <= toolbarBounds.bottom)
+            assertTrue("Save must retain a full touch target", save.width >= 48 * density && save.height >= 48 * density)
+            val toolbarTitle = descendants(toolbar).filterIsInstance<android.widget.TextView>()
+                .single { it.text == toolbar.title }
+            assertTrue("Toolbar title must not overlap Save", boundsIn(root, toolbarTitle).right <= saveBounds.left)
+            val lyricsField = descendants(root).filterIsInstance<com.google.android.material.textfield.TextInputLayout>()
+                .single { it.hint.toString() == "LRC 时间轴歌词" }.editText!!
+            lyricsField.setText(lyrics)
+            save.performClick()
+            assertTrue("Save action must still close the editor", activity.isFinishing)
+            assertEquals(lyrics, CustomLyricsStore.find(context, title, artist)?.lyrics)
+        } finally {
+            controller.pause().stop().destroy()
+            CustomLyricsStore.find(context, title, artist)?.let { CustomLyricsStore.delete(context, it.id) }
+        }
+    }
+
+    @Test fun lyricEditorSaveFitsSmallScreen() = assertLyricEditor("lyric-editor-light")
+
+    @Test fun existingLyricEditorSaveFitsInDarkTheme() {
+        RuntimeEnvironment.setQualifiers("w320dp-h640dp-night")
+        assertLyricEditor("lyric-editor-dark", editing = true)
     }
 
     @Test fun iconButtonsHaveEqualTargetsAndConfirmedTranslucentState() {

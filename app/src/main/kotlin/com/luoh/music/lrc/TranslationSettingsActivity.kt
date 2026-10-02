@@ -132,10 +132,8 @@ class TranslationSettingsActivity : AppCompatActivity() {
             currentApiProfileId = TranslationApiProfiles.find(this, prefs.getString("active_api_profile", null)).id
         }
         val content = NativeUi.screen(this, "补充翻译")
-        content.addView(label("平台译文优先，只在缺少译文时补充。译文会缓存到本机。", 12f))
         val settingsCard = NativeUi.column(this)
         settingsCard.addView(label("翻译方式", 19f))
-        settingsCard.addView(label("点击对应方式立即应用；平台自带译文始终优先。", 12f))
         selectedMode = listOf("off", "offline", "api").indexOf(prefs.getString("mode", "off")).coerceAtLeast(0)
         val segmentRail = MaterialButtonToggleGroup(this).apply {
             isSingleSelection = true
@@ -155,7 +153,6 @@ class TranslationSettingsActivity : AppCompatActivity() {
         settingsCard.addView(segmentRail)
 
         apiBox = NativeUi.column(this, 0)
-        apiBox.addView(label("兼容 Chat Completions 的服务", 14f))
         apiProfileButton = button("") { showApiProfileMenu() }
         apiBox.addView(apiProfileButton)
         apiBox.addView(NativeUi.field(this, "HTTPS 服务地址").also { endpoint = it.editText!! })
@@ -165,7 +162,6 @@ class TranslationSettingsActivity : AppCompatActivity() {
             key.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             it.endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
         })
-        apiBox.addView(label("可随时切换服务；每套地址、模型和密钥独立保存。缺少译文的歌词才会发送，密钥加密保存在本机。", 11f))
         apiBox.addView(button("删除已保存的密钥") {
             NativeUi.confirm(this, "删除已保存的密钥？", "只删除当前 API 配置的本机密钥，地址和模型仍会保留。", "删除密钥") {
                 SecretStorage(this, currentApiProfileId).save("")
@@ -180,7 +176,6 @@ class TranslationSettingsActivity : AppCompatActivity() {
 
         offlineBox = NativeUi.column(this, 0)
         offlineBox.addView(label("离线语言包 · 需要代理", 16f))
-        offlineBox.addView(label("自动识别源语言。单个模型约 30 MB；翻译成中文还需要共用中文模型。系统不提供下载百分比和速度。", 11f))
         downloadProgress = LinearProgressIndicator(this).apply {
             isIndeterminate = true
             visibility = View.GONE

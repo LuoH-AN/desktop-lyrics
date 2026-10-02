@@ -27,7 +27,6 @@ class LyricOffsetMemoryActivity : AppCompatActivity() {
 
     private fun render() {
         content.removeAllViews()
-        content.addView(NativeUi.text(this, "每首歌、每个歌词源独立保存。删除后恢复原始同步时间。", 12f))
         val entries = readEntries()
         if (entries.isEmpty()) {
             content.addView(NativeUi.card(this).apply {

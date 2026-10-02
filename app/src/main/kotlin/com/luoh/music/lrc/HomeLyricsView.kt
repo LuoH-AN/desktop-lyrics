@@ -21,12 +21,10 @@ import android.widget.ScrollView
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
-import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDragHandleView
 import com.google.android.material.card.MaterialCardView
-import com.google.android.material.chip.Chip
 import com.google.android.material.divider.MaterialDivider
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.imageview.ShapeableImageView
@@ -81,14 +79,6 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     private var menu: BottomSheetDialog? = null
     private val lyricRows = mutableListOf<LyricLineView>()
 
-    private val toolbar = MaterialToolbar(context).apply {
-        id = R.id.home_toolbar
-        title = "歌词"
-        subtitle = "现在，专注听歌"
-        setTitleTextAppearance(context, R.style.HomeTitle)
-        setSubtitleTextAppearance(context, R.style.HomeSubtitle)
-        setContentInsetsRelative(dp(24), dp(24))
-    }
     private val playerCard = MaterialCardView(context).apply {
         id = R.id.home_player_card
         radius = dp(28).toFloat()
@@ -100,21 +90,6 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
     }
     private val bar = LinearLayout(context).apply { orientation = VERTICAL }
     private val transport = LinearLayout(context).apply { gravity = Gravity.CENTER }
-    private val playbackStatus = Chip(context).apply {
-        id = R.id.home_playback_status
-        text = "等待播放"
-        textSize = 11f
-        isCheckable = false
-        isClickable = false
-        isFocusable = false
-        setEnsureMinTouchTargetSize(false)
-        chipMinHeight = dp(28).toFloat()
-        chipStrokeWidth = 0f
-        chipStartPadding = 0f
-        chipEndPadding = 0f
-        textStartPadding = dp(10).toFloat()
-        textEndPadding = dp(10).toFloat()
-    }
     private val stage = FrameLayout(context)
     private val scroll = ScrollView(context).apply {
         id = R.id.home_lyrics_scroll
@@ -197,9 +172,11 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         valueTo = 1f
         stepSize = 0f
         labelBehavior = LabelFormatter.LABEL_GONE
-        trackHeight = dp(4)
-        thumbRadius = dp(8)
-        haloRadius = dp(16)
+        trackHeight = dp(6)
+        thumbRadius = dp(9)
+        thumbStrokeWidth = dp(3).toFloat()
+        thumbElevation = 0f
+        haloRadius = dp(20)
         contentDescription = "播放进度"
     }
     private val timeCurrent = label("0:00", 12f).apply { id = R.id.home_time_current }
@@ -235,7 +212,6 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         orientation = VERTICAL
         clipChildren = false
         clipToPadding = false
-        addView(toolbar, LayoutParams(LayoutParams.MATCH_PARENT, dp(72)))
         stage.addView(scroll, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         scroll.addView(lyricsTrack, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         emptyIconTile.addView(emptyIcon, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -248,13 +224,10 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         stage.addView(bottomFade, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40), Gravity.BOTTOM))
         addView(stage, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
-        bar.setPadding(dp(16), dp(8), dp(16), dp(20))
+        bar.setPadding(dp(16), dp(16), dp(16), dp(20))
         val utilities = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
-        utilities.addView(playbackStatus, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
-        utilities.addView(View(context), LayoutParams(0, 0, 1f))
         utilities.addView(overlay, LayoutParams(dp(48), dp(48)))
         utilities.addView(more, LayoutParams(dp(48), dp(48)))
-        bar.addView(utilities, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)))
 
         coverTile.addView(cover, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         val metadata = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
@@ -262,10 +235,11 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         val text = LinearLayout(context).apply { orientation = VERTICAL }
         text.addView(song, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         text.addView(artist, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
-        metadata.addView(text, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(14) })
-        bar.addView(metadata, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
+        metadata.addView(text, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(12) })
+        metadata.addView(utilities, LayoutParams(LayoutParams.WRAP_CONTENT, dp(48)).apply { marginStart = dp(4) })
+        bar.addView(metadata, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         bar.addView(progress, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)))
-        val times = LinearLayout(context).apply { setPadding(dp(4), 0, dp(4), 0) }
+        val times = LinearLayout(context).apply { setPadding(dp(16), 0, dp(16), 0) }
         times.addView(timeCurrent, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
         times.addView(timeDuration, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         bar.addView(times)
@@ -321,21 +295,23 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
                 weight = 1f
             }
         }
-        toolbar.visibility = if (wide || compact) GONE else VISIBLE
+        val panelWidth = if (wide) (availableWidth * .44f).toInt().coerceIn(dp(288), dp(360)) else availableWidth - dp(32)
+        val smallCover = compact || panelWidth < dp(328)
         (playerCard.layoutParams as LayoutParams).apply {
-            width = if (wide) (availableWidth * .44f).toInt().coerceIn(dp(288), dp(360)) else LayoutParams.MATCH_PARENT
+            width = if (wide) panelWidth else LayoutParams.MATCH_PARENT
             gravity = if (wide) Gravity.CENTER_VERTICAL else Gravity.NO_GRAVITY
         }
         val titleLines = if (compact) 1 else 2
         if (song.maxLines != titleLines) song.maxLines = titleLines
-        (coverTile.layoutParams as LayoutParams).apply { width = dp(if (compact) 48 else 60); height = width }
+        song.textSize = if (smallCover) 18f else 20f
+        (coverTile.layoutParams as LayoutParams).apply { width = dp(if (smallCover) 48 else 60); height = width }
         if (snapshot.cover == null) {
-            val padding = dp(if (compact) 12 else 17)
+            val padding = dp(if (smallCover) 12 else 17)
             cover.setPadding(padding, padding, padding, padding)
         }
         (play.layoutParams as LayoutParams).height = dp(if (compact) 56 else 64)
         (transport.layoutParams as LayoutParams).topMargin = dp(if (compact) 8 else 12)
-        bar.setPadding(dp(16), dp(if (compact) 4 else 8), dp(16), dp(if (compact) 12 else 20))
+        bar.setPadding(dp(16), dp(if (compact) 12 else 16), dp(16), dp(if (compact) 12 else 20))
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         val top = (stage.measuredHeight * .42f).toInt()
         val bottom = (stage.measuredHeight * .58f).toInt()
@@ -453,11 +429,7 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         val primary = color(R.color.text_primary)
         val secondary = color(R.color.text_secondary)
         setBackgroundColor(color(R.color.app_bg))
-        toolbar.setTitleTextColor(primary)
-        toolbar.setSubtitleTextColor(secondary)
         playerCard.setCardBackgroundColor(color(R.color.app_surface))
-        playbackStatus.chipBackgroundColor = ColorStateList.valueOf(color(R.color.app_surface_container))
-        playbackStatus.setTextColor(secondary)
         song.setTextColor(primary)
         artist.setTextColor(secondary)
         empty.setTextColor(primary)
@@ -483,10 +455,12 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         play.backgroundTintList = ColorStateList(states, intArrayOf(color(R.color.app_surface_container), color(R.color.accent)))
         play.iconTint = ColorStateList(states, intArrayOf(color(R.color.text_tertiary), color(R.color.text_on_accent)))
         play.rippleColor = ColorStateList.valueOf(ColorUtils.setAlphaComponent(color(R.color.text_on_accent), 48))
-        progress.thumbTintList = ColorStateList.valueOf(primary)
-        progress.trackActiveTintList = ColorStateList.valueOf(primary)
-        progress.trackInactiveTintList = ColorStateList.valueOf(color(R.color.control_track))
-        progress.haloTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(primary, 31))
+        val progressColors = ColorStateList(states, intArrayOf(color(R.color.text_tertiary), color(R.color.accent)))
+        progress.thumbTintList = ColorStateList.valueOf(color(R.color.app_surface))
+        progress.thumbStrokeColor = progressColors
+        progress.trackActiveTintList = progressColors
+        progress.trackInactiveTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(primary, 24))
+        progress.haloTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(primary, 24))
         topFade.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
             intArrayOf(color(R.color.app_bg), ColorUtils.setAlphaComponent(color(R.color.app_bg), 0)))
         bottomFade.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
@@ -506,11 +480,6 @@ class HomeLyricsView @JvmOverloads constructor(context: Context, attrs: Attribut
         play.isEnabled = hasTrack
         play.setIconResource(if (clock.playing) R.drawable.ic_home_pause else R.drawable.ic_home_play)
         play.contentDescription = if (clock.playing) "暂停" else "播放"
-        playbackStatus.text = when {
-            !hasTrack -> "等待播放"
-            clock.playing -> "正在播放"
-            else -> "已暂停"
-        }
         progress.isEnabled = hasTrack && snapshot.durationMs > 0L
     }
 

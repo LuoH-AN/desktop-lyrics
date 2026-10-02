@@ -44,7 +44,6 @@
                                 <com.google.android.material.textview.MaterialTextView android:id="@+id/preview_after_two" style="@style/PreviewLyric" android:text="把喜欢的歌再听一遍" />
                             </LinearLayout>
                         </com.google.android.material.card.MaterialCardView>
-                        <com.google.android.material.textview.MaterialTextView style="@style/SettingHint" android:text="示意背景 · 以下调整只影响桌面上的小歌词窗" />
                     </LinearLayout>
                     <com.google.android.material.divider.MaterialDivider style="@style/CellDivider" />
                     <LinearLayout style="@style/CellColumn">
@@ -69,7 +68,6 @@
                             <com.google.android.material.textview.MaterialTextView android:id="@+id/context_after_value" style="@style/StepValue" android:text="1 句" />
                             <com.google.android.material.button.MaterialButton android:id="@+id/context_after_more" style="@style/StepButton" android:text="＋" android:contentDescription="多显示一句后文" />
                         </LinearLayout>
-                        <com.google.android.material.textview.MaterialTextView style="@style/SettingHint" android:text="前后各可显示 0–2 句，窗口高度自动适应。前后都设为 0 时只保留当前句。" />
                     </LinearLayout>
                     <com.google.android.material.divider.MaterialDivider style="@style/CellDivider" />
                     <LinearLayout style="@style/CellColumn">
@@ -109,7 +107,6 @@
                     <LinearLayout style="@style/CellColumn">
                         <com.google.android.material.textview.MaterialTextView android:id="@+id/lyric_offset_scope" style="@style/SettingHint" android:text="播放一首歌后，可为这首歌单独校准" />
                         <com.google.android.material.textview.MaterialTextView android:id="@+id/lyric_offset_value" style="@style/CellColumnLabel" android:layout_marginTop="8dp" android:accessibilityLiveRegion="polite" android:text="未调整" />
-                        <com.google.android.material.textview.MaterialTextView style="@style/SettingHint" android:text="歌词慢了就提前，歌词快了就延后。每首歌、每个歌词源分别记住。" />
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:orientation="horizontal">
                             <com.google.android.material.button.MaterialButton android:id="@+id/offset_earlier" style="@style/SettingsAction" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:text="提前 0.1 秒" />
                             <com.google.android.material.button.MaterialButton android:id="@+id/offset_later" style="@style/SettingsAction" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_weight="1" android:layout_marginStart="4dp" android:text="延后 0.1 秒" />
@@ -205,7 +202,6 @@
                     </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-            <com.google.android.material.textview.MaterialTextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="22dp" android:gravity="center" android:text="歌词来自 LRCLIB / QQ音乐 / 网易云，版权归各平台所有" android:textColor="@color/text_secondary" android:textSize="12sp" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 </LinearLayout>

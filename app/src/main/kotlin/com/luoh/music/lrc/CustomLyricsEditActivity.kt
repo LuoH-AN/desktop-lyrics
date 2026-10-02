@@ -57,7 +57,17 @@ class CustomLyricsEditActivity : AppCompatActivity() {
             setBackgroundColor(col(R.color.app_bg))
         }
         val toolbar = NativeUi.toolbar(this, if (existing == null) "添加自定义歌词" else "编辑自定义歌词") { leave() }
-        toolbar.addView(NativeUi.button(this, "保存", true) { save() }, Toolbar.LayoutParams(-2, dp(48), Gravity.END))
+        val saveButton = NativeUi.button(this, "保存", true) { save() }.apply {
+            isSingleLine = true
+            minWidth = dp(64)
+            setPadding(dp(16), 0, dp(16), 0)
+            insetTop = dp(4)
+            insetBottom = dp(4)
+            cornerRadius = dp(14)
+        }
+        toolbar.addView(saveButton, Toolbar.LayoutParams(-2, dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply {
+            marginEnd = dp(12)
+        })
         root.addView(toolbar)
         val content = NativeUi.column(this, 20)
         root.addView(NestedScrollView(this).apply {
@@ -66,7 +76,6 @@ class CustomLyricsEditActivity : AppCompatActivity() {
             addView(content)
         }, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
-        content.addView(text("保存后，这首歌在主页和悬浮窗都直接使用这份歌词，不再联网搜索；删除即恢复自动匹配。", 12f))
 
         val info = NativeUi.column(this)
         info.addView(NativeUi.field(this, "歌名（必填）", existing?.title ?: requestedTitle).also { titleField = it.editText!! })
@@ -87,7 +96,6 @@ class CustomLyricsEditActivity : AppCompatActivity() {
         })
         status = text("", 13f).apply { setPadding(dp(2), dp(10), 0, 0) }
         content.addView(status)
-        content.addView(text("格式：每行以 [分:秒.毫秒] 开头，例如 [01:23.45]歌词。同一时间戳写两行时，第二行作为译文显示；支持 [offset:毫秒] 整体偏移。", 12f))
         if (existing != null) content.addView(button("删除这份自定义歌词") { confirmDelete(existing) })
 
         lyricsField.addTextChangedListener(object : TextWatcher {
