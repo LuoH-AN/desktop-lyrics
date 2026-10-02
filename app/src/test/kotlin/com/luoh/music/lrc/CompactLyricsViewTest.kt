@@ -102,6 +102,25 @@ class CompactLyricsViewTest {
         assertEquals(phrase, rows(view).single())
     }
 
+    @Test fun weightChangesAffectEveryRowAndIdenticalAppearanceKeepsViews() {
+        val view = CompactLyricsView(context())
+        view.setPlayback("weight", 1000L, 4000L, false, 1f)
+        view.setDocument(LyricDocument(listOf(
+            LyricLine(0, "Before", "之前"), LyricLine(1000, "Current", "当前"), LyricLine(2000, "After", "之后")
+        ), true))
+        view.setAppearance(100, Color.WHITE, "bilingual", 1, 1, 300)
+        val expectedRows = rows(view)
+        fun textViews() = (0 until view.childCount).map { (view.getChildAt(it) as ViewGroup).getChildAt(0) as MaterialTextView }
+        textViews().forEach { assertEquals(300, it.typeface.weight) }
+        val firstRow = view.getChildAt(0)
+        view.setAppearance(100, Color.WHITE, "bilingual", 1, 1, 300)
+        assertSame("Unchanged appearance must not rebuild rows", firstRow, view.getChildAt(0))
+        view.setAppearance(150, Color.WHITE, "bilingual", 1, 1, 900)
+        assertEquals(expectedRows, rows(view))
+        textViews().forEach { assertEquals(900, it.typeface.weight) }
+        draw(view)
+    }
+
     @Test fun documentBridgeKeepsWordsAndToleratesMissingOptionalFields() {
         val result = requireNotNull(OverlayNativeDocument.parse("""
             {"requestId":7,"key":"song","track":"Song","artist":"Artist","durationMs":10000,

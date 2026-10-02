@@ -99,6 +99,7 @@ class LyricsOverlayService : Service() {
     private var compactHasTranslation = false
     private var backgroundMode = BACKGROUND_DEFAULT
     private var fontScalePercent = FONT_SCALE_DEFAULT_PERCENT
+    private var fontWeight = OverlayAppearance.DEFAULT_FONT_WEIGHT
     private var lyricColor = LYRIC_COLOR_DEFAULT
     private var expandedBackgroundMode = BACKGROUND_DEFAULT
     private var compactBackgroundMode = BACKGROUND_DEFAULT
@@ -185,6 +186,7 @@ class LyricsOverlayService : Service() {
         compactLyricColor = normalizedLyricColor(
             prefs.getString(PREF_LYRIC_COLOR_COMPACT, expandedLyricColor)
         )
+        fontWeight = OverlayAppearance.normalizeWeight(prefs.getInt(PREF_FONT_WEIGHT, OverlayAppearance.DEFAULT_FONT_WEIGHT))
         syncActiveVisualPreferences(true)
         lyricOffsetMs = prefs.getInt(PREF_LYRIC_OFFSET_MS, 0)
             .coerceIn(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
@@ -229,6 +231,13 @@ class LyricsOverlayService : Service() {
                 backgroundMode = value
                 applyBackgroundMode()
             }
+            if (overlayRoot != null) return START_STICKY
+        }
+
+        if (intent?.action == ACTION_SET_FONT_WEIGHT) {
+            fontWeight = OverlayAppearance.normalizeWeight(intent.getIntExtra(EXTRA_FONT_WEIGHT, OverlayAppearance.DEFAULT_FONT_WEIGHT))
+            prefs.edit().putInt(PREF_FONT_WEIGHT, fontWeight).apply()
+            applyFontScale()
             if (overlayRoot != null) return START_STICKY
         }
 
@@ -1075,14 +1084,7 @@ class LyricsOverlayService : Service() {
         button.iconTint = ColorStateList.valueOf(Color.parseColor(lyricColor))
     }
 
-    private fun overlayBackground(isCompact: Boolean): GradientDrawable = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = dp(22).toFloat()
-        setColor(when (backgroundMode) {
-            BACKGROUND_LOW, BACKGROUND_MEDIUM -> Color.argb(140, 12, 12, 14)
-            BACKGROUND_HIGH -> Color.argb(245, 12, 12, 14)
-            else -> Color.TRANSPARENT
-        })
+    private fun overlayBackground(isCompact: Boolean): GradientDrawable = OverlayAppearance.background(this, backgroundMode).apply {
         if (!isCompact) {
             setStroke(dp(1), Color.argb(45, 255, 255, 255))
         }
@@ -1132,7 +1134,7 @@ class LyricsOverlayService : Service() {
 
     private fun applyNativeAppearance() {
         val color = Color.parseColor(lyricColor)
-        nativeLyrics?.setAppearance(fontScalePercent, color, translationMode, contextLines(true), contextLines(false))
+        nativeLyrics?.setAppearance(fontScalePercent, color, translationMode, contextLines(true), contextLines(false), fontWeight)
         listOfNotNull(lockButton, closeButton).forEach { it.iconTint = ColorStateList.valueOf(color) }
     }
 
@@ -1586,6 +1588,7 @@ class LyricsOverlayService : Service() {
         const val ACTION_STATE_CHANGED = "com.luoh.music.lrc.action.LYRICS_OVERLAY_STATE_CHANGED"
         const val ACTION_SET_BACKGROUND = "com.luoh.music.lrc.action.SET_LYRICS_BACKGROUND"
         const val ACTION_SET_FONT_SCALE = "com.luoh.music.lrc.action.SET_LYRICS_FONT_SCALE"
+        const val ACTION_SET_FONT_WEIGHT = "com.luoh.music.lrc.action.SET_LYRICS_FONT_WEIGHT"
         const val ACTION_SET_LYRIC_COLOR = "com.luoh.music.lrc.action.SET_LYRIC_COLOR"
         const val ACTION_SET_LYRIC_OFFSET = "com.luoh.music.lrc.action.SET_LYRIC_OFFSET"
         const val ACTION_CLEAR_LYRIC_OFFSET_MEMORIES = "com.luoh.music.lrc.action.CLEAR_LYRIC_OFFSET_MEMORIES"
@@ -1599,6 +1602,7 @@ class LyricsOverlayService : Service() {
         const val ACTION_RELOAD_CUSTOM_LYRICS = "com.luoh.music.lrc.action.RELOAD_CUSTOM_LYRICS"
         const val EXTRA_BACKGROUND_MODE = "background_mode"
         const val EXTRA_FONT_SCALE_PERCENT = "font_scale_percent"
+        const val EXTRA_FONT_WEIGHT = "font_weight"
         const val EXTRA_LYRIC_COLOR = "lyric_color"
         const val EXTRA_TARGET_COMPACT = "target_compact"
         const val EXTRA_LYRIC_OFFSET_MS = "lyric_offset_ms"
@@ -1610,6 +1614,7 @@ class LyricsOverlayService : Service() {
         const val PREF_BACKGROUND_MODE_COMPACT = "background_mode_compact_v1"
         const val PREF_FONT_SCALE_PERCENT = "font_scale_percent"
         const val PREF_FONT_SCALE_COMPACT_PERCENT = "font_scale_compact_percent_v1"
+        const val PREF_FONT_WEIGHT = "font_weight_compact_v1"
         const val PREF_LYRIC_COLOR = "lyric_color_v1"
         const val PREF_LYRIC_COLOR_COMPACT = "lyric_color_compact_v1"
         const val PREF_LYRIC_OFFSET_MS = "lyric_offset_ms_v1"

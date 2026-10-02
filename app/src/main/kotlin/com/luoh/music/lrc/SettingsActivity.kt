@@ -2,6 +2,7 @@ package com.luoh.music.lrc
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
@@ -13,13 +14,12 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
-import android.util.TypedValue
-import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.widget.NestedScrollView
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import com.google.android.material.appbar.MaterialToolbar
@@ -56,12 +56,14 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var backgroundModeHigh: MaterialButton
     private lateinit var seekFontSize: Slider
     private lateinit var fontSizeValue: TextView
+    private lateinit var seekFontWeight: Slider
+    private lateinit var fontWeightValue: TextView
     private lateinit var lyricOffsetValue: TextView
     private lateinit var lyricOffsetScope: TextView
     private lateinit var offsetEarlier: MaterialButton
     private lateinit var offsetLater: MaterialButton
     private lateinit var offsetReset: MaterialButton
-    private lateinit var overlayPreview: LinearLayout
+    private lateinit var overlayPreview: CompactLyricsView
     private var displayedOffsetMs = 0
     private val offsetPreferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == LyricsOverlayService.PREF_LYRIC_OFFSET_MS ||
@@ -80,17 +82,50 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var translationBilingual: MaterialButton
     private lateinit var translationTranslated: MaterialButton
     private lateinit var versionValue: TextView
+    private lateinit var themeTransition: ThemeTransition
+    private var appliedNightMode = Configuration.UI_MODE_NIGHT_UNDEFINED
+    private var pendingThemeScrollY: Int? = null
+    private var pendingThemeFocusId = View.NO_ID
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_settings)
+        appliedNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        bindContent()
+        themeTransition = ThemeTransition(findViewById(android.R.id.content))
+        ThemePrefs.updateSystemBars(this)
+    }
 
-        // 切主题会 recreate 本页，重新 inflate 整个布局本身有成本；
-        // 给根视图一个淡入，柔化重建时的“硬闪”，主观上像有过渡动画。
-        findViewById<View>(android.R.id.content).apply {
-            alpha = 0f
-            animate().alpha(1f).setDuration(180L).start()
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        val night = newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        if (night == appliedNightMode || !::themeTransition.isInitialized) {
+            super.onConfigurationChanged(newConfig)
+            return
         }
+        if (pendingThemeScrollY == null) {
+            pendingThemeScrollY = findViewById<NestedScrollView>(R.id.settings_scroll).scrollY
+            pendingThemeFocusId = currentFocus?.id ?: View.NO_ID
+        }
+        themeTransition.capture()
+        appliedNightMode = night
+        super.onConfigurationChanged(newConfig)
+        theme.applyStyle(R.style.Theme_DesktopLyrics, true)
+        bindContent()
+        ThemePrefs.updateSystemBars(this)
+        themeTransition.finish {
+            if (pendingThemeFocusId != View.NO_ID) findViewById<View>(pendingThemeFocusId)?.requestFocus()
+            findViewById<NestedScrollView>(R.id.settings_scroll).scrollTo(0, pendingThemeScrollY ?: 0)
+            pendingThemeScrollY = null
+            pendingThemeFocusId = View.NO_ID
+        }
+    }
+
+    override fun onDestroy() {
+        if (::themeTransition.isInitialized) themeTransition.dispose()
+        super.onDestroy()
+    }
+
+    private fun bindContent() {
+        setContentView(R.layout.activity_settings)
 
         findViewById<MaterialToolbar>(R.id.settings_toolbar).setNavigationOnClickListener { finish() }
 
@@ -105,12 +140,22 @@ class SettingsActivity : AppCompatActivity() {
         backgroundModeHigh = findViewById(R.id.background_mode_high)
         seekFontSize = findViewById(R.id.seek_font_size)
         fontSizeValue = findViewById(R.id.font_size_value)
+        seekFontWeight = findViewById(R.id.seek_font_weight)
+        fontWeightValue = findViewById(R.id.font_weight_value)
         lyricOffsetValue = findViewById(R.id.lyric_offset_value)
         lyricOffsetScope = findViewById(R.id.lyric_offset_scope)
         offsetEarlier = findViewById(R.id.offset_earlier)
         offsetLater = findViewById(R.id.offset_later)
         offsetReset = findViewById(R.id.offset_reset)
         overlayPreview = findViewById(R.id.overlay_preview)
+        overlayPreview.setPlayback("preview", 10000L, 25000L, false, 1f)
+        overlayPreview.setDocument(LyricDocument(listOf(
+            LyricLine(0L, "City lights", "街灯轻轻亮起"),
+            LyricLine(5000L, "A quiet melody", "旋律停在耳边"),
+            LyricLine(10000L, "Stay with me", "让歌词陪着你"),
+            LyricLine(15000L, "One more song", "再听一首歌"),
+            LyricLine(20000L, "Until tomorrow", "直到明天")
+        ), true))
         lyricColorWhite = findViewById(R.id.lyric_color_white)
         lyricColorBlue = findViewById(R.id.lyric_color_blue)
         lyricColorBlack = findViewById(R.id.lyric_color_black)
@@ -160,6 +205,10 @@ class SettingsActivity : AppCompatActivity() {
             val percent = value.toInt()
             fontSizeValue.text = "$percent%"
             if (fromUser) setFontScale(percent)
+        }
+
+        seekFontWeight.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) setFontWeight(value.toInt())
         }
 
         // 正偏移让歌词提前，用自然语言操作，不要求用户理解正负号。
@@ -272,6 +321,7 @@ class SettingsActivity : AppCompatActivity() {
         updateThemeUi()
         updateBackgroundModeUi()
         updateFontSizeUi()
+        updateFontWeightUi()
         updateLyricOffsetUi()
         updateLyricColorUi()
         updateTranslationModeUi()
@@ -281,6 +331,7 @@ class SettingsActivity : AppCompatActivity() {
 
     // ---------- 主题 ----------
     private fun setTheme(mode: String) {
+        if (appPrefs.getString(ThemePrefs.KEY, ThemePrefs.FOLLOW) == mode) return
         appPrefs.edit().putString(ThemePrefs.KEY, mode).apply()
         ThemePrefs.apply(mode)
         updateThemeUi()
@@ -347,30 +398,11 @@ class SettingsActivity : AppCompatActivity() {
         val color = runCatching {
             Color.parseColor(overlayPrefs.getString(lyricColorPreferenceKey(), expandedLyricColor()))
         }.getOrDefault(Color.WHITE)
-        val before = contextLines(true)
-        val after = contextLines(false)
-        val lines = listOf(
-            R.id.preview_before_two to (before >= 2), R.id.preview_before_one to (before >= 1),
-            R.id.preview_current to true,
-            R.id.preview_after_one to (after >= 1), R.id.preview_after_two to (after >= 2)
-        )
-        lines.forEach { (id, visible) ->
-            findViewById<TextView>(id).apply {
-                visibility = if (visible) View.VISIBLE else View.GONE
-                setTextColor(color)
-                alpha = if (id == R.id.preview_current) 1f else .72f
-                setTextSize(TypedValue.COMPLEX_UNIT_DIP, (if (id == R.id.preview_current) 30f else 23f) * percent / 100f)
-            }
-        }
         val mode = overlayPrefs.getString(backgroundPreferenceKey(), expandedBackgroundMode())
-        overlayPreview.background = GradientDrawable().apply {
-            cornerRadius = 10f * resources.displayMetrics.density
-            setColor(when (mode) {
-                LyricsOverlayService.BACKGROUND_TRANSPARENT -> Color.TRANSPARENT
-                LyricsOverlayService.BACKGROUND_HIGH -> Color.argb(245, 12, 12, 14)
-                else -> Color.argb(140, 12, 12, 14)
-            })
-        }
+        val translation = overlayPrefs.getString(LyricsOverlayService.PREF_TRANSLATION_MODE, LyricsOverlayService.TRANSLATION_BILINGUAL)
+            ?: LyricsOverlayService.TRANSLATION_BILINGUAL
+        overlayPreview.setAppearance(percent, color, translation, contextLines(true), contextLines(false), fontWeight())
+        overlayPreview.background = OverlayAppearance.background(this, mode)
     }
 
     // ---------- 背景：透明 / 半透明 / 不透明 ----------
@@ -439,6 +471,29 @@ class SettingsActivity : AppCompatActivity() {
         )
         fontSizeValue.text = "$percent%"
         seekFontSize.value = percent.toFloat()
+    }
+
+    private fun fontWeight(): Int = OverlayAppearance.normalizeWeight(
+        overlayPrefs.getInt(LyricsOverlayService.PREF_FONT_WEIGHT, OverlayAppearance.DEFAULT_FONT_WEIGHT)
+    )
+
+    private fun setFontWeight(value: Int) {
+        val weight = OverlayAppearance.normalizeWeight(value)
+        overlayPrefs.edit().putInt(LyricsOverlayService.PREF_FONT_WEIGHT, weight).apply()
+        updateFontWeightUi()
+        updateOverlayPreview()
+        if (LyricsOverlayService.isRunning) {
+            startService(Intent(this, LyricsOverlayService::class.java).apply {
+                action = LyricsOverlayService.ACTION_SET_FONT_WEIGHT
+                putExtra(LyricsOverlayService.EXTRA_FONT_WEIGHT, weight)
+            })
+        }
+    }
+
+    private fun updateFontWeightUi() {
+        val weight = fontWeight()
+        fontWeightValue.text = weight.toString()
+        seekFontWeight.value = weight.toFloat()
     }
 
     // ---------- 歌词同步 ----------
@@ -531,6 +586,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         overlayPrefs.edit().putString(LyricsOverlayService.PREF_TRANSLATION_MODE, normalized).apply()
         updateTranslationModeUi()
+        updateOverlayPreview()
         if (LyricsOverlayService.isRunning) {
             startService(Intent(this, LyricsOverlayService::class.java).apply {
                 action = LyricsOverlayService.ACTION_SET_TRANSLATION_MODE

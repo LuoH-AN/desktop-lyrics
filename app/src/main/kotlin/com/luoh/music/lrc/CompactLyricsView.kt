@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.os.SystemClock
 import android.text.Layout
 import android.text.TextUtils
+import android.util.AttributeSet
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -15,7 +16,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 /** Compact native lyrics. The hidden matching engine never participates in animation. */
-class CompactLyricsView(context: Context) : LinearLayout(context) {
+class CompactLyricsView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : LinearLayout(context, attrs) {
     var onContentSizeChanged: ((hasLyrics: Boolean, hasTranslation: Boolean, heightPx: Int) -> Unit)? = null
 
     private var document = LyricDocument(emptyList(), true)
@@ -27,6 +28,7 @@ class CompactLyricsView(context: Context) : LinearLayout(context) {
     private val playing: Boolean get() = clock.playing
     private var offsetMs = 0
     private var fontScale = 1f
+    private var fontWeight = OverlayAppearance.DEFAULT_FONT_WEIGHT
     private var lyricColor = Color.WHITE
     private var translationMode = LyricsOverlayService.TRANSLATION_BILINGUAL
     private var before = 0
@@ -55,6 +57,7 @@ class CompactLyricsView(context: Context) : LinearLayout(context) {
         clipChildren = true
         clipToPadding = true
         setPadding(dp(8), dp(6), dp(8), dp(6))
+        minimumHeight = dp(48)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
     }
 
@@ -80,12 +83,20 @@ class CompactLyricsView(context: Context) : LinearLayout(context) {
         render(true)
     }
 
-    fun setAppearance(percent: Int, color: Int, mode: String, contextBefore: Int, contextAfter: Int) {
-        fontScale = percent.coerceIn(35, 150) / 100f
+    fun setAppearance(percent: Int, color: Int, mode: String, contextBefore: Int, contextAfter: Int,
+                      weight: Int = OverlayAppearance.DEFAULT_FONT_WEIGHT) {
+        val scale = percent.coerceIn(35, 150) / 100f
+        val normalizedWeight = OverlayAppearance.normalizeWeight(weight)
+        val normalizedBefore = contextBefore.coerceIn(0, 2)
+        val normalizedAfter = contextAfter.coerceIn(0, 2)
+        if (fontScale == scale && fontWeight == normalizedWeight && lyricColor == color &&
+            translationMode == mode && before == normalizedBefore && after == normalizedAfter) return
+        fontScale = scale
+        fontWeight = normalizedWeight
         lyricColor = color
         translationMode = mode
-        before = contextBefore.coerceIn(0, 2)
-        after = contextAfter.coerceIn(0, 2)
+        before = normalizedBefore
+        after = normalizedAfter
         // Recreate rows for metrics/color changes, even if their text is unchanged.
         paintedRows = emptyList()
         render(true)
@@ -204,7 +215,12 @@ class CompactLyricsView(context: Context) : LinearLayout(context) {
             }
             lyric.apply {
                 textSize = textSp
+                typeface = OverlayAppearance.typeface(fontWeight)
                 setTextColor(lyricColor)
+                // A glyph-only shadow keeps transparent lyrics legible without adding a backdrop.
+                val shadow = if (androidx.core.graphics.ColorUtils.calculateLuminance(lyricColor) > .5) Color.BLACK else Color.WHITE
+                setShadowLayer(1.5f * resources.displayMetrics.density, 0f, .5f * resources.displayMetrics.density,
+                    androidx.core.graphics.ColorUtils.setAlphaComponent(shadow, 180))
                 includeFontPadding = false
                 setPadding(0, 0, 0, 0)
                 setSingleLine(true)

@@ -5,6 +5,8 @@ import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
@@ -16,6 +18,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
+import android.view.ViewGroup
 import android.graphics.Bitmap
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textview.MaterialTextView
@@ -38,6 +41,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var home: HomeLyricsView
     private lateinit var gate: View
     private lateinit var gateStatus: MaterialTextView
+    private lateinit var themeTransition: ThemeTransition
+    private var appliedNightMode = Configuration.UI_MODE_NIGHT_UNDEFINED
     private val overlayStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) = updateOverlayState()
     }
@@ -108,6 +113,9 @@ class MainActivity : AppCompatActivity() {
         home.actions = HomeActions()
         gate = findViewById(R.id.gate_overlay)
         gateStatus = findViewById(R.id.gate_status)
+        appliedNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        themeTransition = ThemeTransition(findViewById(android.R.id.content))
+        ThemePrefs.updateSystemBars(this)
 
         // 权限浮层按钮
         findViewById<MaterialButton>(R.id.gate_listener).setOnClickListener {
@@ -125,6 +133,43 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<MaterialButton>(R.id.gate_start).setOnClickListener { tryStartOverlay() }
         findViewById<MaterialButton>(R.id.gate_settings_link).setOnClickListener { openSettings() }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        val night = newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        if (night == appliedNightMode || !::themeTransition.isInitialized) {
+            super.onConfigurationChanged(newConfig)
+            return
+        }
+        themeTransition.capture()
+        appliedNightMode = night
+        super.onConfigurationChanged(newConfig)
+        theme.applyStyle(R.style.Theme_DesktopLyrics, true)
+        home.applyTheme()
+        applyGateTheme(gate)
+        ThemePrefs.updateSystemBars(this)
+        themeTransition.finish()
+    }
+
+    private fun applyGateTheme(view: View) {
+        when (view) {
+            is MaterialButton -> {
+                val primary = view.id == R.id.gate_start
+                view.setTextColor(ContextCompat.getColor(this, when {
+                    primary -> R.color.text_on_accent
+                    view.id == R.id.gate_settings_link -> R.color.text_secondary
+                    else -> R.color.text_primary
+                }))
+                view.backgroundTintList = ColorStateList.valueOf(
+                    if (primary) ContextCompat.getColor(this, R.color.accent) else android.graphics.Color.TRANSPARENT)
+                view.strokeColor = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.app_line))
+                view.rippleColor = ContextCompat.getColorStateList(this, R.color.native_ripple)
+            }
+            is MaterialTextView -> view.setTextColor(ContextCompat.getColor(this,
+                if (view.id == R.id.gate_status) R.color.text_secondary else R.color.text_primary))
+        }
+        if (view === gate) view.setBackgroundColor(ContextCompat.getColor(this, R.color.app_bg))
+        if (view is ViewGroup) for (index in 0 until view.childCount) applyGateTheme(view.getChildAt(index))
     }
 
     override fun onStart() {
@@ -160,6 +205,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        if (::themeTransition.isInitialized) themeTransition.dispose()
         ioScope.coroutineContext[Job]?.cancel()
         super.onDestroy()
     }
