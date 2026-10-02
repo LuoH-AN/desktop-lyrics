@@ -135,8 +135,10 @@ class CompactLyricsViewTest {
             assertEquals(4, view.childCount)
             for (index in 0 until view.childCount) {
                 val text = (view.getChildAt(index) as ViewGroup).getChildAt(0) as MaterialTextView
-                assertEquals(0f, text.shadowRadius, 0f)
-                assertFalse("Current, translated and context rows must not glow", text.paint.hasShadowLayer())
+                assertEquals("Current, translated and context rows must not glow", 0f, text.shadowRadius, 0f)
+                assertEquals(0f, text.shadowDx, 0f)
+                assertEquals(0f, text.shadowDy, 0f)
+                assertEquals(Color.TRANSPARENT, text.shadowColor)
             }
         }
     }
