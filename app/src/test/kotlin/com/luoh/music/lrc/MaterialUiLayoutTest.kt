@@ -294,7 +294,8 @@ class MaterialUiLayoutTest {
             assertTrue("Save must retain a full touch target", save.width >= 48 * density && save.height >= 48 * density)
             val toolbarTitle = descendants(toolbar).filterIsInstance<android.widget.TextView>()
                 .single { it.text == toolbar.title }
-            assertTrue("Toolbar title must not overlap Save", boundsIn(root, toolbarTitle).right <= saveBounds.left)
+            val titleBounds = boundsIn(root, toolbarTitle)
+            assertTrue("Toolbar title $titleBounds must not overlap Save $saveBounds", titleBounds.right <= saveBounds.left)
             val lyricsField = descendants(root).filterIsInstance<com.google.android.material.textfield.TextInputLayout>()
                 .single { it.hint.toString() == "LRC 时间轴歌词" }.editText!!
             lyricsField.setText(lyrics)

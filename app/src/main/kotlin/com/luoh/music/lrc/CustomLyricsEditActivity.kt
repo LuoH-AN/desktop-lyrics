@@ -10,8 +10,10 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.MenuItem
 import android.view.View
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -20,7 +22,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.widget.NestedScrollView
-import androidx.appcompat.widget.Toolbar
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
@@ -65,9 +66,13 @@ class CustomLyricsEditActivity : AppCompatActivity() {
             insetBottom = dp(4)
             cornerRadius = dp(14)
         }
-        toolbar.addView(saveButton, Toolbar.LayoutParams(-2, dp(48), Gravity.END or Gravity.CENTER_VERTICAL).apply {
-            marginEnd = dp(12)
-        })
+        toolbar.menu.add("保存").apply {
+            actionView = FrameLayout(this@CustomLyricsEditActivity).apply {
+                setPadding(0, 0, dp(12), 0)
+                addView(saveButton, FrameLayout.LayoutParams(-2, dp(48), Gravity.CENTER_VERTICAL))
+            }
+            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+        }
         root.addView(toolbar)
         val content = NativeUi.column(this, 20)
         root.addView(NestedScrollView(this).apply {
