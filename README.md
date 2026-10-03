@@ -23,6 +23,6 @@
 
 ## 项目信息
 
-当前源码：**1.0.2** · 包名：`com.luoh.music.lrc`
+当前源码：**1.0.3** · 包名：`com.luoh.music.lrc`
 
 [隐私说明](PRIVACY.md) · [更新记录](CHANGELOG.md) · [开发与发布](docs/releasing.md) · [来源与致谢](NOTICE.md)

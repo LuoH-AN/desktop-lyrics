@@ -21,6 +21,6 @@ Requires Android 8.0+, a 64-bit ARM device, Android System WebView, and a player
 
 ## Project
 
-Source version: **1.0.2** · Package: `com.luoh.music.lrc`
+Source version: **1.0.3** · Package: `com.luoh.music.lrc`
 
 [Privacy](PRIVACY.md) · [Changelog](CHANGELOG.md) · [Development and releases](docs/releasing.md) · [Credits](NOTICE.md)
